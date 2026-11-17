@@ -110,6 +110,24 @@ export function createCity(random) {
     parkedCars.push({ x, y, angle: vertical ? Math.PI / 2 : 0, model: pick(random, ['sedan', 'sedan', 'van', 'taxi']), color: pick(random, carColors), target: false });
   }
 
+  // Never let a parked car block the courier van: with some seeds one lands
+  // on top of the van's parking spot and wedges it against the safehouse,
+  // so the first mission cannot even start. Relocated cars go to a fixed
+  // road-edge spot (no extra random calls, so the rest of the city is
+  // unchanged for this seed).
+  let relocated = 0;
+  for (const pc of parkedCars) {
+    if (pc.target) continue;
+    const nearVan = Math.hypot(pc.x - (safehouse.x + 110), pc.y - (safehouse.y + 40)) < 130;
+    const nearHome = Math.hypot(pc.x - safehouse.x, pc.y - safehouse.y) < 200;
+    if (nearVan || nearHome) {
+      pc.x = roadCenter(7);
+      pc.y = roadCenter(1) + 26 + relocated * 70;
+      pc.angle = 0;
+      relocated += 1;
+    }
+  }
+
   function inWater(x, y) {
     if (y < WORLD.waterY) return false;
     for (const pier of piers) {

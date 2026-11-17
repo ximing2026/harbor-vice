@@ -37,8 +37,11 @@ export function startMission(world, index) {
   s.marker = null;
   s.objective = '';
   if (index === 0) {
-    // The courier van waits at the safehouse garage.
-    const van = world.spawnPlayerCar('van', city.safehouse.x + 90, city.safehouse.y + 40, 0);
+    // The courier van waits at the safehouse garage. Its spot is clear of
+    // the home's east wall and of the player's sedan: it used to spawn half
+    // inside the wall, wedged against the sedan, and mission 1 could not
+    // even start.
+    const van = world.spawnPlayerCar('van', city.safehouse.x + 110, city.safehouse.y + 40, 0);
     van.missionVan = true;
     s.marker = { x: van.x, y: van.y, label: 'Courier van' };
     s.objective = 'Get in the courier van';

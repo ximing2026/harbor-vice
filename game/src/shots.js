@@ -13,7 +13,7 @@ import { range } from './random.js';
 const START_SECONDS = 6;
 const DRIVE_SECONDS = 17;
 const CHASE_SECONDS = 13;
-const MISSION_SECONDS = 9;
+const MISSION_SECONDS = 6;
 
 function normAngle(a) {
   while (a > Math.PI) a -= Math.PI * 2;
@@ -141,7 +141,14 @@ export function stageShot(name, world) {
         input.aimX = nearest.x;
         input.aimY = nearest.y;
         input.shoot = d < 420;
-        if (d > 170) {
+        // Kite: close in to shoot, but back off when a guard gets too close
+        // or the player's health is low — standing still gets Rook killed.
+        if (d < 170 || p.health < 40) {
+          input.up = dy > 8;
+          input.down = dy < -8;
+          input.left = dx > 8;
+          input.right = dx < -8;
+        } else if (d > 170) {
           input.up = dy < -8;
           input.down = dy > 8;
           input.left = dx < -8;

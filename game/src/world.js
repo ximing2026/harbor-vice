@@ -620,8 +620,11 @@ export function createWorld(random) {
     state.objective = '';
     state.stats = { missionsDone: 0, carsStolen: 0, pedsHit: 0, shotsFired: 0, timePlayed: 0 };
     state.player = makePlayer(city.safehouse.x + 40, city.safehouse.y + 110);
-    // The player's own sedan waits at the safehouse.
-    const sedan = spawnPlayerCar('sedan', city.safehouse.x + 110, city.safehouse.y + 40, Math.PI / 2);
+    // The player's own sedan waits on the road just south of the safehouse.
+    // It used to sit in the courier van's exit lane, 20px from the van, and
+    // wedge it against the home's east wall so the first mission could not
+    // even start.
+    const sedan = spawnPlayerCar('sedan', city.safehouse.x + 40, city.safehouse.y + 204, 0);
     sedan.own = true;
     // The mission target car sits at the plaza.
     spawnParkedCar(true);
