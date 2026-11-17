@@ -1,6 +1,7 @@
-// The city of Port Meridian: a seeded grid of roads, blocks and buildings, the
-// harbour along its south edge, and every named place the missions use. Pure
-// data and geometry — no drawing, no browser — so the shots and the game share it.
+// The city of Port Meridian: a seeded grid of roads, blocks and buildings,
+// the harbour along its south edge, and every named place the missions use.
+// Pure data and geometry — no drawing, no browser — so the shots and the
+// game build the same city from the same seed.
 import { GRID, PALETTE, WORLD } from './config.js';
 import { pick, range } from './random.js';
 
@@ -23,8 +24,7 @@ export function createCity(random) {
   const parkedCars = [];
   const carColors = ['#d94f3d', '#3d7dd9', '#e8c95a', '#7ddc7d', '#e8e8e8', '#5a4a6b', '#2fa8a0', '#c95a7d'];
 
-  // Named places: block indices are (column, row) in the 8x8 block grid.
-  const SAFEHOUSE_BLOCK = [0, 0];
+  // Named places: block indices are (column, row) on the 8x8 block grid.
   const PARK_BLOCK = [4, 4];
   const PLAZA_BLOCK = [5, 3];
   const CHOP_BLOCK = [7, 1];
@@ -54,7 +54,7 @@ export function createCity(random) {
         continue;
       }
       if (key === `${PLAZA_BLOCK[0]},${PLAZA_BLOCK[1]}`) {
-        // Open plaza: no buildings, the mission-2 sports car parks here.
+        // Open plaza: no buildings, and the mission-2 sports car parks here.
         parkedCars.push({ x: plaza.x + 40, y: plaza.y - 20, angle: Math.PI / 2, model: 'sports', color: '#e8c95a', target: true });
         for (let t = 0; t < 4; t += 1) {
           palms.push({ x: block.x + 24 + t * 60, y: block.y + 24 });
@@ -62,7 +62,7 @@ export function createCity(random) {
         }
         continue;
       }
-      if (key === `${SAFEHOUSE_BLOCK[0]},${SAFEHOUSE_BLOCK[1]}`) {
+      if (key === '0,0') {
         buildings.push({ x: block.x + 20, y: block.y + 20, w: 120, h: 90, color: '#f0e6d2', roof: '#8a5a3b', seed: random(), home: true });
         buildings.push({ x: block.x + 150, y: block.y + 130, w: 60, h: 50, color: '#c9a2d8', roof: '#5d6b7a', seed: random() });
         continue;
@@ -71,7 +71,7 @@ export function createCity(random) {
         buildings.push({ x: block.x + 30, y: block.y + 30, w: 168, h: 120, color: '#5d6b7a', roof: '#3a3f4a', seed: random(), chop: true });
         continue;
       }
-      // Ordinary block: one big building, two side by side, or four small ones.
+      // An ordinary block: one big building, two side by side, or four small.
       const style = random();
       if (style < 0.45) {
         buildings.push({ x: block.x + 14, y: block.y + 14, w: block.w - 28, h: block.h - 28, color: pick(random, PALETTE.building), roof: pick(random, PALETTE.roof), seed: random() });
@@ -89,7 +89,7 @@ export function createCity(random) {
     }
   }
 
-  // Lamps at every intersection corner, palms along the harbour front.
+  // A lamp at every intersection corner, and palms along the harbour front.
   for (let i = 0; i < GRID.roads; i += 1) {
     for (let j = 0; j < GRID.roads; j += 1) {
       lamps.push({ x: roadCenter(i) - GRID.roadWidth / 2 + 6, y: roadCenter(j) - GRID.roadWidth / 2 + 6 });
@@ -99,7 +99,7 @@ export function createCity(random) {
     palms.push({ x: x + range(random, -20, 20), y: WORLD.waterY - 60 });
   }
 
-  // Parked cars along road edges (stealable, not the mission target).
+  // Parked cars along road edges: stealable, but not the mission target.
   for (let n = 0; n < 10; n += 1) {
     const vertical = random() < 0.5;
     const road = Math.floor(random() * GRID.roads);
@@ -134,7 +134,7 @@ export function createCity(random) {
           nx = cx + (dx / d) * r;
           ny = cy + (dy / d) * r;
         } else {
-          // Centre inside the building: push out along the smallest overlap.
+          // The centre is inside the building: leave along the smallest overlap.
           const left = nx - b.x;
           const right = b.x + b.w - nx;
           const top = ny - b.y;

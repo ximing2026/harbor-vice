@@ -1,6 +1,7 @@
-// Procedural sound for HARBOR VICE: every effect is synthesised with WebAudio,
-// so the game ships no audio files and still answers every action with a sound.
-// A low bass line loops under play; M mutes; the first user gesture unlocks audio.
+// Procedural sound for HARBOR VICE: every effect is synthesised with
+// WebAudio, so the game ships no audio files and still answers every action
+// with a sound. A low bass line loops under play; M mutes; the first user
+// gesture unlocks the audio context.
 export class SoundFX {
   constructor() {
     this.ctx = null;
@@ -97,7 +98,7 @@ export class SoundFX {
     this.engineOsc.frequency.setTargetAtTime(55 + speed01 * 95, this.ctx.currentTime, 0.08);
   }
 
-  /** A two-tone police siren while wanted; off otherwise. */
+  /** A two-tone police siren while the player is wanted; off otherwise. */
   setSiren(on) {
     if (!this.ctx || this.muted) return;
     if (on && !this.sirenOsc) {
@@ -124,7 +125,7 @@ export class SoundFX {
 
   startMusic() {
     if (!this.ctx || this.musicTimer || this.muted) return;
-    // A slow sunset bass line: A minor walk, one note a beat, soft triangle.
+    // A slow sunset bass line: an A-minor walk, one note a beat, soft triangle.
     const line = [110, 110, 130.8, 98, 110, 110, 146.8, 164.8];
     this.musicTimer = window.setInterval(() => {
       if (this.muted) return;

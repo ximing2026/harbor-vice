@@ -5,7 +5,7 @@ import { roadCenter } from './city.js';
 import { makeCar, makePed } from './entities.js';
 import { range } from './random.js';
 
-function angleDiff(a, b) {
+function angDiff(a, b) {
   let d = b - a;
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
@@ -56,7 +56,7 @@ export function stepCopCar(dt, city, car, player, playerCar) {
   const px = target.x + (target.vx || 0) * 0.4;
   const py = target.y + (target.vy || 0) * 0.4;
   const want = Math.atan2(py - car.y, px - car.x);
-  const diff = angleDiff(car.angle, want);
+  const diff = angDiff(car.angle, want);
   car.angle += Math.max(-3.4 * dt, Math.min(3.4 * dt, diff));
   // If the target is right behind, back up out of the jam instead of spinning.
   const throttle = Math.abs(diff) > 2.2 && car.speed < 40 ? -0.7 : 1;

@@ -1,8 +1,9 @@
-// The screenshot scenes behind ?shot=start|drive|chase|mission. Each one plays
-// the real rules forward from a fresh world for a fixed number of steps, steered
-// by a simple autopilot, so the frame is what real play looks like and the same
-// seed always gives the same frame. The four scenes together show the title,
-// driving with a mission, a police chase, and the harbour shootout.
+// The screenshot scenes behind ?shot=start|drive|chase|mission. Each one
+// plays the real rules forward from a fresh world for a fixed number of
+// steps, steered by a simple autopilot, so the frame is what real play
+// looks like and the same seed always gives the same frame. The four scenes
+// together show the title, driving with a mission, a police chase, and the
+// harbour shootout.
 import { STEP } from './config.js';
 import { makePed } from './entities.js';
 import { startMission } from './missions.js';

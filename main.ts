@@ -1,9 +1,10 @@
-// HARBOR VICE, the entry program (Node 22, standard library only). The game is
-// this directory's game/ folder: plain static files a desktop browser loads
-// offline (game/index.html and its ES modules, no library, no network request).
-// This program hands it in: it copies game/ and screenshots/ from beside this
-// file to /output and writes /output/dossier.json, the summary the judge reads,
-// with the vendored make.fun library (vendor/makefun-game.ts, unchanged).
+// HARBOR VICE, the entry program (Node 22, standard library only). The game
+// is this directory's game/ folder: plain static files a desktop browser
+// loads offline (game/index.html and its ES modules, no library, no network
+// request). This program hands it in: it copies game/ and screenshots/ from
+// beside this file to /output and writes /output/dossier.json, the summary
+// the judge reads, with the vendored make.fun library
+// (vendor/makefun-game.ts, unchanged).
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
@@ -24,11 +25,12 @@ if (existsSync(join(here, 'screenshots'))) {
   cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 }
 
-// The caps are the scorer's own (reference/gate.json): text_max_bytes shapes the
-// dossier's bytes; the others refuse an entry the scorer would refuse — more
-// than 4 screenshots or one over 256 KiB; more than 993 files in game/ or
-// 48 MiB of game files in all; a path under game/ over 1000 bytes. game/
-// counts beside /output's own 1000-entry cap, its screenshots/ and dossier.json.
+// The caps are the scorer's own (reference/gate.json): text_max_bytes shapes
+// the dossier's bytes; the others refuse an entry the scorer would refuse —
+// more than 4 screenshots or one over 256 KiB; more than 993 files in game/
+// or 48 MiB of game files in all; a path under game/ over 1000 bytes.
+// game/ counts beside /output's own 1000-entry cap, its screenshots/ and
+// dossier.json.
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {

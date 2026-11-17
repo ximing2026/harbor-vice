@@ -1,10 +1,10 @@
-// Boot and the one loop for HARBOR VICE: input is read every frame, the world
-// advances in fixed 1/60 s steps (several in a slow frame, none in a fast one),
-// and the renderer paints what is there. The game moves between six screens:
-// title, play, paused, busted, wasted and complete.
+// Boot and the one loop for HARBOR VICE: input is read every frame, the
+// world advances in fixed 1/60 s steps (several in a slow frame, none in a
+// fast one), and the renderer paints what is there. The game moves between
+// six screens: title, play, paused, busted, wasted and complete.
 //
-// ?seed=N fixes the city. ?shot=start|drive|chase|mission (with &seed=N) stages
-// that scene instead of running the loop, paints it twice and sets
+// ?seed=N fixes the city. ?shot=start|drive|chase|mission (with &seed=N)
+// stages that scene instead of running the loop, paints it twice and sets
 // window.__shotReady for a screenshot.
 import { STEP, VIEW } from './config.js';
 import { createRandom } from './random.js';

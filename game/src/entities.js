@@ -1,6 +1,7 @@
 // Factories for the moving things in Port Meridian: cars and pedestrians.
-// A car is a circle in the physics (radius) with a body length for drawing;
-// a pedestrian is a walker with a mood (calm, fleeing, down, thug, guard).
+// A car is a circle in the physics (its radius) with a body length for the
+// drawing; a pedestrian is a walker with a mood (calm, fleeing, down, thug,
+// guard, cop, driver).
 import { CAR, PALETTE } from './config.js';
 import { pick, range } from './random.js';
 
@@ -33,7 +34,7 @@ export function makePed(random, x, y, role = 'walker') {
     health: role === 'guard' || role === 'thug' ? 100 : 30,
     shirt: role === 'cop' ? '#2244aa' : role === 'guard' ? '#3a3f4a' : role === 'thug' ? '#5a2a2a' : pick(random, PED_SHIRTS),
     state: 'walk', // walk | flee | down | chase | attack
-    tx: x, ty: y, // current walk target
+    tx: x, ty: y, // the walk target they are heading for
     timer: range(random, 0, 2),
     attackTimer: 0, shootTimer: range(random, 0.5, 1.5),
     down: 0, active: true,

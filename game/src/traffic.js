@@ -6,7 +6,7 @@ import { roadCenter } from './city.js';
 import { makeCar, makePed } from './entities.js';
 import { range } from './random.js';
 
-function nearestIntersection(x, y) {
+function nearestNode(x, y) {
   let best = null;
   let bestD = Infinity;
   for (let i = 0; i < GRID.roads; i += 1) {
@@ -20,11 +20,7 @@ function nearestIntersection(x, y) {
   return best;
 }
 
-function angleTo(a, b) {
-  return Math.atan2(b.y - a.y, b.x - a.x);
-}
-
-function angleDiff(a, b) {
+function angDiff(a, b) {
   let d = b - a;
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
@@ -33,7 +29,7 @@ function angleDiff(a, b) {
 
 /** A traffic car picks its next intersection when it reaches the one it aimed for. */
 function retarget(car, random) {
-  const node = nearestIntersection(car.x, car.y);
+  const node = nearestNode(car.x, car.y);
   const options = [];
   if (node.i > 0) options.push({ i: node.i - 1, j: node.j });
   if (node.i < GRID.roads - 1) options.push({ i: node.i + 1, j: node.j });
@@ -95,7 +91,7 @@ export function stepTraffic(dt, city, cars, playerCar, focus, random) {
     const dist = Math.hypot(dx, dy);
     if (dist < 24) retarget(car, random);
     const want = Math.atan2(car.target.y - car.y, car.target.x - car.x);
-    car.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, angleDiff(car.angle, want)));
+    car.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, angDiff(car.angle, want)));
     const blocked = blockedAhead(car, cars, 78) || (playerCar && playerCar.active && blockedAhead(car, [playerCar], 78));
     const targetSpeed = blocked ? 0 : car.cruise;
     car.speed += Math.max(-320 * dt, Math.min(220 * dt, targetSpeed - car.speed));
@@ -107,7 +103,7 @@ export function stepTraffic(dt, city, cars, playerCar, focus, random) {
     if (fx * fx + fy * fy > TRAFFIC.despawn * TRAFFIC.despawn) {
       const p = city.randomRoadPoint(random);
       // Keep the recycle near the player: nudge the spawn onto a nearby road.
-      const near = nearestIntersection(focus.x, focus.y);
+      const near = nearestNode(focus.x, focus.y);
       const road = Math.floor(random() * GRID.roads);
       const along = range(random, -400, 400);
       if (random() < 0.5) { car.x = roadCenter(road); car.y = Math.max(0, Math.min(2400, roadCenter(near.j) + along)); }
@@ -153,7 +149,7 @@ export function stepPeds(dt, city, peds, danger, random) {
       ped.timer = range(random, 4, 10);
     }
     const want = Math.atan2(ped.ty - ped.y, ped.tx - ped.x);
-    ped.angle += Math.max(-3 * dt, Math.min(3 * dt, angleDiff(ped.angle, want)));
+    ped.angle += Math.max(-3 * dt, Math.min(3 * dt, angDiff(ped.angle, want)));
     if (!ped.walkSpeed) ped.walkSpeed = range(random, PEDS.walkMin, PEDS.walkMax);
     const speed = ped.walkSpeed;
     const next = city.collide(ped.x + Math.cos(ped.angle) * speed * dt, ped.y + Math.sin(ped.angle) * speed * dt, 10);

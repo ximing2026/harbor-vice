@@ -1,6 +1,7 @@
-// Save and load for HARBOR VICE: mission progress, money and lifetime stats
-// in localStorage, so a visit can pick up where the last one left off.
-// Storage can be off (private windows): then the game just plays unsaved.
+// Save and load for HARBOR VICE: mission progress, money and lifetime
+// stats in localStorage, so a visit can pick up where the last one left
+// off. Storage can be off (private windows): then the game just plays
+// unsaved, and nothing about that is an error.
 import { SAVE_KEY } from './config.js';
 
 export function loadSave() {

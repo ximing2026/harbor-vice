@@ -1,6 +1,7 @@
-// Drawing only: the world's state and the current screen in, pixels out. The
-// camera follows the player through the city; the HUD, minimap and panels are
-// drawn in screen space. Flat shapes, warm golden-hour colours, long shadows.
+// Drawing only: the world's state and the current screen in, pixels out.
+// The camera follows the player through the city; the HUD, minimap and
+// panels are drawn in screen space. Flat shapes, warm golden-hour colours,
+// long shadows.
 import { FONT, GRID, MONEY, PALETTE, VIEW, WORLD } from './config.js';
 import { roadCenter } from './city.js';
 import { missionName } from './missions.js';
@@ -100,7 +101,7 @@ export function createRenderer(canvas) {
     waterGrad.addColorStop(1, PALETTE.waterDeep);
     ctx.fillStyle = waterGrad;
     ctx.fillRect(vx0, Math.max(vy0, WORLD.waterY), vx1 - vx0, Math.max(0, Math.min(vy1, WORLD.waterY + WORLD.waterH) - Math.max(vy0, WORLD.waterY)));
-    // Sun glints on the water.
+    // Sun glints drifting on the water.
     ctx.fillStyle = PALETTE.waterGlint;
     for (let i = 0; i < 14; i += 1) {
       const gx = ((i * 173 + Math.floor(state.time * 12)) % 2600) - 80;
@@ -155,7 +156,7 @@ export function createRenderer(canvas) {
       ctx.fillStyle = '#7d5a35';
       for (let y = pier.y + 14; y < pier.y + pier.h; y += 28) ctx.fillRect(pier.x, y, pier.w, 3);
     }
-    // Buildings with long evening shadows, roofs and windows.
+    // Buildings: long evening shadows, roofs, lit windows.
     for (const b of city.buildings) {
       ctx.fillStyle = 'rgba(20, 16, 10, 0.25)';
       ctx.fillRect(b.x + 10, b.y + 12, b.w, b.h);
@@ -308,7 +309,7 @@ export function createRenderer(canvas) {
       ctx.arc(car.x, car.y, 30, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // Damage smoke is particles; a hurt car shows a warning puff here too.
+    // A hurt car shows a warning puff here too (damage smoke is particles).
     if (car.health < 45 && car.active) {
       ctx.fillStyle = 'rgba(90,90,90,0.5)';
       ctx.beginPath();

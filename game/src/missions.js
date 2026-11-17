@@ -1,7 +1,7 @@
-// The story of HARBOR VICE: five chained jobs for Rook, a courier who owes the
-// Harbor Crew. Each mission is a small state machine over the world; the world
-// calls startMission once and updateMission every step. Markers and objectives
-// are written onto the world state for the HUD and the minimap to show.
+// The story of HARBOR VICE: five chained jobs for Rook, a courier who owes
+// the Harbor Crew. Each mission is a small state machine over the world; the
+// world calls startMission once and updateMission every step. Markers and
+// objectives are written onto the world state for the HUD and the minimap.
 import { makePed } from './entities.js';
 import { range } from './random.js';
 

@@ -1,11 +1,12 @@
-// Every tuning number and colour for HARBOR VICE in one place. The world is a
-// top-down port city on a fixed grid; the renderer shows a 1280x720 window of it
-// through a camera that follows the player, so no rule depends on screen size.
+// HARBOR VICE tuning: every number and colour the game uses, in one file.
+// Port Meridian is a top-down city on a fixed grid. The renderer shows a
+// 1280x720 slice of it through a camera that trails the player, so nothing
+// here depends on the size of the browser window.
 export const STEP = 1 / 60;
 
 export const VIEW = { width: 1280, height: 720 };
 
-// City grid: 9 roads each way, 300 px pitch, 72 px roads, 228 px blocks.
+// Nine roads each way, 300 px apart, 72 px wide, leaving 228 px blocks.
 export const GRID = { roads: 9, pitch: 300, roadWidth: 72, block: 228 };
 export const WORLD = { minX: -80, minY: -80, maxX: 2520, maxY: 2520, waterY: 2520, waterH: 260 };
 
@@ -39,6 +40,8 @@ export const CAR = {
 export const TRAFFIC = { count: 14, speedMin: 110, speedMax: 175, despawn: 900 };
 export const PEDS = { count: 26, walkMin: 45, walkMax: 75, fleeSpeed: 150 };
 
+// Wanted level: how long unseen before it starts to cool, how fast it cools,
+// how many cop cars each star calls, and what each crime is worth in stars.
 export const WANTED = {
   decayDelay: 7,
   decayInterval: 9,
@@ -55,8 +58,8 @@ export const MONEY = { start: 150, bustedFine: 200, wastedFine: 200 };
 
 export const SAVE_KEY = 'harbor-vice.save.v1';
 
+// Golden-hour harbour city: warm sun, pastel blocks, teal water.
 export const PALETTE = {
-  // Golden-hour port city: warm sun, pastel blocks, teal water.
   grass: '#7fae62',
   parkGrass: '#69a054',
   sidewalk: '#c9bda6',

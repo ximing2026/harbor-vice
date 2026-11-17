@@ -1,8 +1,9 @@
-// The game's rules and state, with no drawing and no browser in it: the player
-// on foot and in cars, traffic, police, wanted level, missions, pickups and
-// effects. step() advances one fixed step and returns what happened as bit
-// flags, so the caller can react (sound, screens) without the world knowing
-// about screens or sound. The world owns the city and the mission machine.
+// The game's rules and state, with no drawing and no browser in it: the
+// player on foot and in cars, traffic, police, wanted level, missions,
+// pickups and effects. step() advances one fixed step and returns what
+// happened as bit flags, so the caller can react (sound, screens) without
+// the world knowing about screens or sound. The world owns the city and
+// the mission machine.
 import { CAR, GRID, MONEY, PEDS, PLAYER, TRAFFIC, VIEW, WANTED, WORLD } from './config.js';
 import { createCity, roadCenter } from './city.js';
 import { makeCar, makePed } from './entities.js';
@@ -27,7 +28,7 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-function angleDiff(a, b) {
+function angDiff(a, b) {
   let d = b - a;
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
@@ -147,7 +148,8 @@ export function createWorld(random) {
       state.stats.carsStolen += 1;
       events |= EVENT_STEAL | gainWanted(WANTED.stealCar);
     } else if (car.driver === 'parked' && !car.own && !car.missionVan) {
-      // A parked car with an owner: taking it is still theft.
+      // A parked car with an owner: taking it is still theft, and the heat
+      // rises for it exactly as it does for a car pulled from traffic.
       state.stats.carsStolen += 1;
       events |= EVENT_STEAL | gainWanted(WANTED.stealCar);
     }
@@ -587,7 +589,6 @@ export function createWorld(random) {
     p.health = PLAYER.health;
     p.inCar = false;
     p.car = null;
-    p.armed = p.armed;
     const fixed = city.collide(city.safehouse.x + 40, city.safehouse.y + 110, PLAYER.radius);
     p.x = fixed.x;
     p.y = fixed.y;
@@ -670,6 +671,8 @@ export function createWorld(random) {
           }
         }
       }
+      // Once the heat is gone, no foot cop stays on the street: the whole
+      // foot-cop list goes, not just the downed ones.
       if (state.wanted === 0) state.footCops = [];
       else state.footCops = state.footCops.filter((c) => c.active && c.down <= 0);
       const missionResult = updateMission(world, dt);

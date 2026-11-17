@@ -1,8 +1,8 @@
-// Keyboard and mouse input for HARBOR VICE. Held keys give the current move
-// and drive state; one-shot presses (confirm, pause, enter car, punch, shoot)
-// are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice. The mouse position is tracked
-// in screen pixels and converted to world coordinates by the caller.
+// Keyboard and mouse input for HARBOR VICE. Held keys report the current
+// move and drive state; one-shot presses (confirm, pause, enter car, punch)
+// are queued as bit flags and taken once by the loop, so a press that lands
+// between two frames is never lost and never counted twice. The mouse is
+// tracked in screen pixels and converted to world coordinates by the caller.
 export const ACTION_CONFIRM = 1;
 export const ACTION_PAUSE = 2;
 export const ACTION_ENTER = 4;
@@ -66,17 +66,17 @@ export function createInput(canvas) {
     mouseDown = false;
   });
 
-  function has(set) {
+  function held(set) {
     for (const code of set) if (keys.has(code)) return true;
     return false;
   }
 
   return {
-    up: () => has(UP),
-    down: () => has(DOWN),
-    left: () => has(LEFT),
-    right: () => has(RIGHT),
-    run: () => has(RUN),
+    up: () => held(UP),
+    down: () => held(DOWN),
+    left: () => held(LEFT),
+    right: () => held(RIGHT),
+    run: () => held(RUN),
     mouse: () => ({ x: mouseX, y: mouseY, down: mouseDown }),
     /** The one-shot presses since the last call, as ACTION_* flags. */
     takeActions() {
