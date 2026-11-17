@@ -1,165 +1,143 @@
-// The screenshot scenes behind ?shot=start|drive|chase|mission. Each one
-// plays the real rules forward from a fresh world for a fixed number of
-// steps, steered by a simple autopilot, so the frame is what real play
-// looks like and the same seed always gives the same frame. The four scenes
-// together show the title, driving with a mission, a police chase, and the
-// harbour shootout.
-import { STEP } from './config.js';
-import { makePed } from './entities.js';
+// Screenshot scenes: each plays the real rules forward from a fresh world
+// for a fixed number of steps, steered by a simple autopilot, so the frame is
+// what a short game really looks like and the same seed always gives the same
+// frame.
+import { STEP, WORLD } from './config.js';
+import { createWorld, stepWorld } from './world.js';
 import { startMission } from './missions.js';
-import { SCREEN_PLAY, SCREEN_TITLE } from './render.js';
-import { range } from './random.js';
+import { angleDiff, clamp } from './random.js';
 
-const START_SECONDS = 6;
-const DRIVE_SECONDS = 17;
-const CHASE_SECONDS = 13;
-const MISSION_SECONDS = 6;
+const DRIVE_SECONDS = 8;
+const CHASE_SECONDS = 7;
+const MISSION_SECONDS = 3;
 
-function normAngle(a) {
-  while (a > Math.PI) a -= Math.PI * 2;
-  while (a < -Math.PI) a += Math.PI * 2;
-  return a;
-}
-
-function noInput() {
-  return { up: false, down: false, left: false, right: false, run: false, punch: false, shoot: false, enter: false, aimX: 0, aimY: 0 };
-}
-
-/** Steer a car toward (tx, ty); reverse briefly if wedged against a building. */
-function driveToward(world, tx, ty, stuck) {
-  const car = world.state.player.car;
-  if (!car) return noInput();
-  const want = Math.atan2(ty - car.y, tx - car.x);
-  const diff = normAngle(want - car.angle);
-  const speed = Math.abs(car.speed || 0);
-  if (speed < 25) stuck.time += STEP;
-  else stuck.time = 0;
-  if (stuck.time > 1.1) {
-    stuck.time = 0;
-    return { up: false, down: true, left: true, right: false, run: false, punch: false, shoot: false, enter: false, aimX: tx, aimY: ty };
-  }
+function blankInput() {
   return {
-    up: true, down: false,
-    left: diff < -0.1, right: diff > 0.1,
-    run: false, punch: false, shoot: false, enter: false, aimX: tx, aimY: ty,
+    up: false, down: false, left: false, right: false,
+    enter: false, action: false, punch: false, shoot: false,
+    aimX: 0, aimY: 0,
   };
 }
 
-function putPlayerInCar(world, car) {
-  const p = world.state.player;
-  car.driver = 'player';
-  p.inCar = true;
-  p.car = car;
-  p.x = car.x;
-  p.y = car.y;
-  p.angle = car.angle;
+// Drive the player's car toward a road point: steer to the target, brake for
+// sharp turns so the car can make 90-degree corners without clipping buildings.
+// Never reverse: if the target is behind, drive on and loop around —
+// reversing into a turn stalls the car in an oscillation.
+function driveToward(state, tx, ty) {
+  const car = state.playerCar;
+  const input = blankInput();
+  if (!car) return input;
+  const want = Math.atan2(ty - car.y, tx - car.x);
+  const diff = angleDiff(car.angle, want);
+  input.left = diff < -0.15;
+  input.right = diff > 0.15;
+  input.up = Math.abs(diff) < 1.2;
+  input.down = false;
+  return input;
 }
 
-/**
- * Set `world` to the named scene and return the screen to draw over it.
- * Any name other than drive/chase/mission is the title scene.
- */
-export function stageShot(name, world) {
-  const s = world.state;
+function walkToward(state, tx, ty, shoot) {
+  const p = state.player;
+  const input = blankInput();
+  const want = Math.atan2(ty - p.y, tx - p.x);
+  const dx = Math.cos(want);
+  const dy = Math.sin(want);
+  input.right = dx > 0.3;
+  input.left = dx < -0.3;
+  input.down = dy > 0.3;
+  input.up = dy < -0.3;
+  if (shoot) {
+    input.aimX = shoot.x;
+    input.aimY = shoot.y;
+    input.shoot = true;
+  }
+  return input;
+}
+
+function stepN(state, seconds, inputFn) {
+  const steps = Math.round(seconds / STEP);
+  for (let i = 0; i < steps; i += 1) {
+    stepWorld(state, inputFn ? inputFn(state, i) : blankInput(), STEP);
+  }
+}
+
+export function stageShot(name, seed) {
+  const state = createWorld(seed || 20261117);
+  state.screen = 'play';
+
   if (name === 'drive') {
-    world.reset(true);
-    startMission(world, 1);
-    const target = s.cars.find((c) => c.target);
-    putPlayerInCar(world, target);
-    s.mission.stage = 1;
-    s.marker = { x: world.city.chopShop.x, y: world.city.chopShop.y, label: 'Chop shop' };
-    s.objective = 'Deliver the Comet GT to the chop shop';
-    const stuck = { time: 0 };
-    for (let i = 0; i < DRIVE_SECONDS / STEP; i += 1) {
-      const m = s.marker;
-      world.step(STEP, driveToward(world, m.x, m.y, stuck), {});
-    }
-    return { screen: SCREEN_PLAY };
+    // The Comet GT, mid-drive down a long straight with traffic around.
+    const comet = state.missionVehicles.comet;
+    comet.x = 400;
+    comet.y = 1048;
+    comet.angle = 0;
+    comet.parked = false;
+    comet.driver = 'player';
+    state.playerCar = comet;
+    state.player.onFoot = false;
+    state.player.x = comet.x;
+    state.player.y = comet.y;
+    state.player.angle = 0;
+    state.mission.index = 1;
+    startMission(state, 1);
+    stepN(state, DRIVE_SECONDS, () => driveToward(state, 1500, 1048));
+    return { state, screen: 'play' };
   }
+
   if (name === 'chase') {
-    world.reset(true);
-    startMission(world, 3);
-    const car = world.spawnPlayerCar('sports', s.player.x + 120, s.player.y + 30, 0);
-    putPlayerInCar(world, car);
-    // Let the wanted level call its cop cars, then pull two of them in close
-    // so the chase is visibly on at the captured frame.
-    for (let i = 0; i < 4 / STEP; i += 1) world.step(STEP, noInput(), {});
-    const cops = s.copCars.slice(0, 2);
-    cops.forEach((cop, i) => {
-      const a = (i === 0 ? 2.4 : -0.7);
-      cop.x = s.player.x + Math.cos(a) * 190;
-      cop.y = s.player.y + Math.sin(a) * 190;
-      cop.angle = Math.atan2(s.player.y - cop.y, s.player.x - cop.x);
-      cop.speed = 300;
-    });
-    const stuck = { time: 0 };
-    for (let i = 0; i < CHASE_SECONDS / STEP; i += 1) {
-      // Flee from the nearest cop car.
-      let nearest = null;
-      let nearestD = Infinity;
-      for (const cop of s.copCars) {
-        const d = Math.hypot(cop.x - s.player.x, cop.y - s.player.y);
-        if (d < nearestD) { nearestD = d; nearest = cop; }
-      }
-      const tx = nearest ? s.player.x + (s.player.x - nearest.x) * 2 : s.player.x + 600;
-      const ty = nearest ? s.player.y + (s.player.y - nearest.y) * 2 : s.player.y;
-      world.step(STEP, driveToward(world, tx, ty, stuck), {});
-    }
-    return { screen: SCREEN_PLAY };
+    // Five stars: the sedan fleeing north with cop cars closing in.
+    const sedan = state.missionVehicles.sedan;
+    sedan.x = 832;
+    sedan.y = 1300;
+    sedan.angle = -Math.PI / 2;
+    sedan.parked = false;
+    sedan.driver = 'player';
+    state.playerCar = sedan;
+    state.player.onFoot = false;
+    state.player.x = sedan.x;
+    state.player.y = sedan.y;
+    state.player.angle = -Math.PI / 2;
+    state.player.heat = 100;
+    state.player.wanted = 5;
+    state.player.unseen = 0;
+    state.player.lastSeenX = sedan.x;
+    state.player.lastSeenY = sedan.y;
+    // The banner reads "Lose the Heat": this is the escape, not a delivery.
+    startMission(state, 3);
+    state.player.heat = 100;
+    state.player.wanted = 5;
+    // Cop cars spawn on their own during the pursuit (heat is 5 stars).
+    stepN(state, CHASE_SECONDS, () => driveToward(state, 832, 300));
+    return { state, screen: 'play' };
   }
+
   if (name === 'mission') {
-    world.reset(true);
-    startMission(world, 4);
-    const p = s.player;
-    p.x = world.city.docks.x;
-    p.y = world.city.docks.y - 60;
-    p.armed = true;
-    p.ammo = 60;
-    s.mission.stage = 1;
-    s.marker = { x: world.city.safehouse.x, y: world.city.safehouse.y, label: 'Safehouse' };
-    s.objective = 'Briefcase secured — get home, and watch the docks crew';
-    world.setWanted(4, true);
-    for (let i = 0; i < 4; i += 1) {
-      const guard = makePed(world.random, world.city.docks.x + range(world.random, -160, 160), world.city.docks.y - range(world.random, 40, 220), 'guard');
-      guard.state = 'chase';
-      s.peds.push(guard);
-    }
-    for (let i = 0; i < MISSION_SECONDS / STEP; i += 1) {
-      // Close to the nearest guard and keep shooting at them.
-      let nearest = null;
-      let nearestD = Infinity;
-      for (const ped of s.peds) {
-        if (ped.role !== 'guard' || ped.down > 0) continue;
-        const d = Math.hypot(ped.x - p.x, ped.y - p.y);
-        if (d < nearestD) { nearestD = d; nearest = ped; }
+    // The Harbor Job: on the pier, guards ahead, briefcase in reach.
+    state.mission.index = 4;
+    startMission(state, 4);
+    state.player.x = 1200;
+    state.player.y = 1880;
+    state.player.angle = Math.PI / 2;
+    state.player.ammo = 60;
+    stepN(state, MISSION_SECONDS, (st) => {
+      // Shoot the nearest live guard or foot cop. Before the grab, walk to
+      // the briefcase; after it, run back north off the pier.
+      let guard = null;
+      let best = 320 * 320;
+      for (const g of [...st.guards, ...st.footCops]) {
+        if (g.hp <= 0) continue;
+        const d = (g.x - st.player.x) ** 2 + (g.y - st.player.y) ** 2;
+        if (d < best) { best = d; guard = g; }
       }
-      const input = noInput();
-      if (nearest) {
-        const dx = nearest.x - p.x;
-        const dy = nearest.y - p.y;
-        const d = Math.hypot(dx, dy);
-        input.aimX = nearest.x;
-        input.aimY = nearest.y;
-        input.shoot = d < 420;
-        // Kite: close in to shoot, but back off when a guard gets too close
-        // or the player's health is low — standing still gets Rook killed.
-        if (d < 170 || p.health < 40) {
-          input.up = dy > 8;
-          input.down = dy < -8;
-          input.left = dx > 8;
-          input.right = dx < -8;
-        } else if (d > 170) {
-          input.up = dy < -8;
-          input.down = dy > 8;
-          input.left = dx < -8;
-          input.right = dx > 8;
-        }
-      }
-      world.step(STEP, input, {});
-    }
-    return { screen: SCREEN_PLAY };
+      const bc = st.city.briefcase;
+      if (st.mission.sub.gotCase) return walkToward(st, 1200, 1800, guard);
+      return walkToward(st, bc.x, bc.y, guard);
+    });
+    return { state, screen: 'play' };
   }
-  world.reset(false);
-  for (let i = 0; i < START_SECONDS / STEP; i += 1) world.step(STEP, noInput(), { harmless: true });
-  return { screen: SCREEN_TITLE };
+
+  // Default: title over a living city.
+  stepN(state, 5, null);
+  state.screen = 'title';
+  return { state, screen: 'title' };
 }

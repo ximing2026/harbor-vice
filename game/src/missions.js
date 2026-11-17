@@ -1,204 +1,169 @@
-// The story of HARBOR VICE: five chained jobs for Rook, a courier who owes
-// the Harbor Crew. Each mission is a small state machine over the world; the
-// world calls startMission once and updateMission every step. Markers and
-// objectives are written onto the world state for the HUD and the minimap.
-import { makePed } from './entities.js';
-import { range } from './random.js';
+// The five chained story missions: objectives, spawn hooks and completion.
+import { MISSION_TITLES, MISSION_PAYOUTS } from './config.js';
+import { dist2 } from './random.js';
+import { makeBullet } from './entities.js';
 
-export const MISSIONS = [
-  { id: 'first-run', name: 'First Run', reward: 400 },
-  { id: 'hot-wheels', name: 'Hot Wheels', reward: 700 },
-  { id: 'shakedown', name: 'The Shakedown', reward: 900 },
-  { id: 'heat-wave', name: 'Heat Wave', reward: 1200 },
-  { id: 'harbor-job', name: 'The Harbor Job', reward: 2500 },
+function near(ax, ay, bx, by, r) {
+  return dist2(ax, ay, bx, by) < r * r;
+}
+
+function spawnThug(state, x, y) {
+  state.thugs.push({ x, y, angle: 0, speed: 78, hp: 50, punchT: 0 });
+}
+
+function spawnGuard(state, x, y) {
+  state.guards.push({ x, y, angle: 0, hp: 60, shootT: 0.6 + state.rng() * 0.8 });
+}
+
+export const MISSION_DEFS = [
+  {
+    title: MISSION_TITLES[0],
+    objective: 'Drive the courier van from the safehouse to the docks',
+    start(state) {
+      state.mission.sub.enteredVan = false;
+    },
+    check(state) {
+      const p = state.player;
+      return state.mission.sub.enteredVan && !p.onFoot && state.playerCar && state.playerCar.kind === 'van'
+        && near(p.x, p.y, state.city.docks.x, state.city.docks.y, state.city.docks.r);
+    },
+  },
+  {
+    title: MISSION_TITLES[1],
+    objective: 'Steal the gold Comet GT and deliver it to the chop shop',
+    start(state) {
+      state.mission.sub.enteredComet = false;
+    },
+    check(state) {
+      const p = state.player;
+      const cs = state.city.chopshop;
+      const cx = cs.x + cs.w / 2;
+      const cy = cs.y + cs.h / 2;
+      return state.mission.sub.enteredComet && !p.onFoot && state.playerCar && state.playerCar.kind === 'comet'
+        && near(p.x, p.y, cx, cy, 150);
+    },
+  },
+  {
+    title: MISSION_TITLES[2],
+    objective: 'Shake down all 3 shops — the thugs will not like it',
+    start(state) {
+      state.mission.sub.visited = [false, false, false];
+      state.mission.sub.thugsSpawned = false;
+      for (const shop of state.city.shops) {
+        spawnThug(state, shop.x - 40, shop.y + shop.h + 30);
+        spawnThug(state, shop.x + shop.w + 40, shop.y - 30);
+      }
+      state.mission.sub.thugsSpawned = true;
+    },
+    check(state) {
+      const p = state.player;
+      let all = true;
+      state.city.shops.forEach((shop, i) => {
+        const cx = shop.x + shop.w / 2;
+        const cy = shop.y + shop.h / 2;
+        if (near(p.x, p.y, cx, cy, 110)) state.mission.sub.visited[i] = true;
+        if (!state.mission.sub.visited[i]) all = false;
+      });
+      return all;
+    },
+  },
+  {
+    title: MISSION_TITLES[3],
+    objective: 'Lose the 3-star heat — stay unseen until it burns off',
+    start(state) {
+      state.player.heat = 60;
+      state.player.wanted = 3;
+      state.player.unseen = 0;
+      state.mission.sub.armed = true;
+    },
+    check(state) {
+      return state.mission.sub.armed && state.player.heat <= 0;
+    },
+  },
+  {
+    title: MISSION_TITLES[4],
+    objective: 'Harbour shootout: grab the briefcase on pier 2, then escape to the safehouse',
+    start(state) {
+      state.mission.sub.gotCase = false;
+      state.mission.sub.escaped = false;
+      const pier = state.city.piers[1];
+      spawnGuard(state, pier.x + 14, pier.y + 60);
+      spawnGuard(state, pier.x + pier.w - 14, pier.y + 90);
+      spawnGuard(state, pier.x + 40, pier.y + 140);
+      spawnGuard(state, pier.x + 20, pier.y + 20);
+    },
+    check(state) {
+      const p = state.player;
+      const bc = state.city.briefcase;
+      if (!state.mission.sub.gotCase && near(p.x, p.y, bc.x, bc.y, 34)) {
+        state.mission.sub.gotCase = true;
+        bc.taken = true;
+        state.player.heat = Math.max(state.player.heat, 80);
+        state.player.wanted = 4;
+        if (state.onEvent) state.onEvent('case');
+      }
+      if (state.mission.sub.gotCase) {
+        const sh = state.city.safehouse;
+        const cx = sh.x + sh.w / 2;
+        const cy = sh.y + sh.h / 2;
+        if (near(p.x, p.y, cx, cy, 130)) return true;
+      }
+      return false;
+    },
+  },
 ];
 
-const BRIEFINGS = [
-  "Rook, the Harbor Crew owns your debt. First job's easy: take the van from your garage to the drop at the docks. Don't scratch it.",
-  "The Crew wants a ride. A gold Comet GT is parked at Meridian Plaza — take it, any way you like, and bring it to the chop shop on Coral Row.",
-  "Three shops on the Crew's books are late. Walk in, collect $300 from each. The owners' friends may object. They usually do.",
-  "Somebody talked. The whole Port Meridian PD is coming for you. Lose the heat — all of it — then get home.",
-  "The big one. Grab the briefcase at the end of Pier 1. The docks crew won't hand it over. Then bring it home through the storm.",
-];
-
-export function missionName(index) {
-  return index >= 0 && index < MISSIONS.length ? MISSIONS[index].name : 'Free Roam';
+export function startMission(state, index) {
+  state.mission.index = index;
+  state.mission.sub = {};
+  state.mission.startedAt = state.time;
+  if (MISSION_DEFS[index]) MISSION_DEFS[index].start(state);
+  if (state.onEvent) state.onEvent('mission-start');
 }
 
-export function missionBriefing(index) {
-  return BRIEFINGS[index] || '';
+export function currentObjective(state) {
+  const def = MISSION_DEFS[state.mission.index];
+  if (!def) return 'Free roam — Port Meridian is yours';
+  return def.title + ': ' + def.objective;
 }
 
-/** Place the mission's pieces and set the first objective. Returns the briefing. */
-export function startMission(world, index) {
-  const s = world.state;
-  const city = world.city;
-  s.mission = { index, stage: 0, timer: 0, hold: 0, collected: 0, guardsSpawned: false };
-  s.marker = null;
-  s.objective = '';
-  if (index === 0) {
-    // The courier van waits at the safehouse garage. Its spot is clear of
-    // the home's east wall and of the player's sedan: it used to spawn half
-    // inside the wall, wedged against the sedan, and mission 1 could not
-    // even start.
-    const van = world.spawnPlayerCar('van', city.safehouse.x + 110, city.safehouse.y + 40, 0);
-    van.missionVan = true;
-    s.marker = { x: van.x, y: van.y, label: 'Courier van' };
-    s.objective = 'Get in the courier van';
-  } else if (index === 1) {
-    const target = world.city.parkedCars.find((c) => c.target);
-    s.marker = { x: target.x, y: target.y, label: 'Comet GT' };
-    s.objective = 'Steal the gold Comet GT at Meridian Plaza';
-  } else if (index === 2) {
-    s.marker = { x: city.shops[0].x, y: city.shops[0].y, label: city.shops[0].label };
-    s.objective = `Collect from ${city.shops[0].label} (0/3)`;
-  } else if (index === 3) {
-    world.setWanted(3, true);
-    s.objective = 'Lose the cops — get your wanted level to zero';
-  } else if (index === 4) {
-    s.marker = { x: city.docks.x, y: city.docks.y, label: 'Pier 1' };
-    s.objective = 'Get to the briefcase at the end of Pier 1';
-  }
-  return BRIEFINGS[index];
-}
-
-function dist(ax, ay, bx, by) {
-  return Math.hypot(ax - bx, ay - by);
-}
-
-/**
- * Advance the active mission one step. Returns 'done' when the mission pays
- * out, 'failed' when it must restart (busted/wasted is handled by the world),
- * or null while it runs.
- */
-export function updateMission(world, dt) {
-  const s = world.state;
-  const city = world.city;
-  const m = s.mission;
-  if (!m || m.index >= MISSIONS.length) return null;
-  const p = s.player;
-
-  if (m.index === 0) {
-    const van = s.cars.find((c) => c.missionVan);
-    if (m.stage === 0) {
-      if (p.inCar && p.car === van) {
-        m.stage = 1;
-        s.marker = { x: city.docks.x, y: 2470, label: 'Drop point' };
-        s.objective = 'Deliver the van to the docks drop point';
-      }
-    } else if (p.inCar && p.car === van && dist(p.car.x, p.car.y, city.docks.x, 2470) < 90) {
-      return finishMission(world);
-    }
-  } else if (m.index === 1) {
-    const target = s.cars.find((c) => c.target);
-    if (m.stage === 0) {
-      if (p.inCar && p.car === target) {
-        m.stage = 1;
-        s.marker = { x: city.chopShop.x, y: city.chopShop.y, label: 'Chop shop' };
-        s.objective = 'Deliver the Comet GT to the chop shop';
-      }
-    } else if (p.inCar && p.car === target && dist(p.car.x, p.car.y, city.chopShop.x, city.chopShop.y) < 90) {
-      return finishMission(world);
-    }
-    // The target was wrecked: put a fresh one back at the plaza.
-    if (!target || !target.active) {
-      const t = world.spawnParkedCar(true);
-      if (t) { m.stage = 0; s.marker = { x: t.x, y: t.y, label: 'Comet GT' }; s.objective = 'Steal the gold Comet GT at Meridian Plaza'; }
-    }
-  } else if (m.index === 2) {
-    const shop = city.shops[m.stage];
-    if (!shop) return finishMission(world);
-    if (!p.inCar && dist(p.x, p.y, shop.x, shop.y) < 58) {
-      m.hold += dt;
-      s.objective = `Collecting from ${shop.label}… ${Math.ceil(2 - m.hold)}s`;
-      if (m.hold >= 2) {
-        s.money += 300;
-        m.collected += 1;
-        m.hold = 0;
-        m.stage += 1;
-        world.addPickup('cash', shop.x + 30, shop.y + 30, 0);
-        if (m.stage < city.shops.length) {
-          const next = city.shops[m.stage];
-          s.marker = { x: next.x, y: next.y, label: next.label };
-          s.objective = `Collect from ${next.label} (${m.collected}/3)`;
-          spawnThugs(world, next);
-        } else {
-          return finishMission(world);
-        }
-      }
+// Thugs chase and punch; guards hold the pier and shoot.
+export function stepMissionActors(state, dt) {
+  const p = state.player;
+  for (const t of state.thugs) {
+    if (t.hp <= 0) continue;
+    const d = Math.sqrt(dist2(t.x, t.y, p.x, p.y));
+    const a = Math.atan2(p.y - t.y, p.x - t.x);
+    t.angle = a;
+    if (d > 30) {
+      t.x += Math.cos(a) * t.speed * dt;
+      t.y += Math.sin(a) * t.speed * dt;
     } else {
-      m.hold = 0;
-      s.objective = p.inCar ? 'Get out of the car to collect' : `Collect from ${shop.label} (${m.collected}/3)`;
-    }
-  } else if (m.index === 3) {
-    if (m.stage === 0) {
-      if (s.wanted === 0) {
-        m.stage = 1;
-        s.marker = { x: city.safehouse.x, y: city.safehouse.y, label: 'Safehouse' };
-        s.objective = 'Heat is gone — get home to the safehouse';
+      t.punchT -= dt;
+      if (t.punchT <= 0) {
+        t.punchT = 0.9;
+        p.hp -= 8;
+        state.shake = Math.min(10, state.shake + 3);
+        if (state.onEvent) state.onEvent('hurt');
       }
-    } else if (dist(p.x, p.y, city.safehouse.x, city.safehouse.y) < 80) {
-      return finishMission(world);
-    }
-  } else if (m.index === 4) {
-    if (m.stage === 0) {
-      if (dist(p.x, p.y, city.docks.x, city.docks.y) < 60) {
-        m.hold += dt;
-        s.objective = `Grabbing the briefcase… ${Math.ceil(1.2 - m.hold)}s`;
-        if (m.hold >= 1.2) {
-          m.stage = 1;
-          m.hold = 0;
-          s.marker = { x: city.safehouse.x, y: city.safehouse.y, label: 'Safehouse' };
-          s.objective = 'Briefcase secured — get home, and watch the docks crew';
-          world.setWanted(4, true);
-          if (!p.armed) { p.armed = true; p.ammo = Math.max(p.ammo, 60); }
-          spawnGuards(world);
-        }
-      } else {
-        m.hold = 0;
-        s.objective = 'Get to the briefcase at the end of Pier 1';
-      }
-    } else if (dist(p.x, p.y, city.safehouse.x, city.safehouse.y) < 80) {
-      return finishMission(world);
     }
   }
-  return null;
+  for (const g of state.guards) {
+    if (g.hp <= 0) continue;
+    const d = Math.sqrt(dist2(g.x, g.y, p.x, p.y));
+    g.angle = Math.atan2(p.y - g.y, p.x - g.x);
+    g.shootT -= dt;
+    if (d < 380 && g.shootT <= 0) {
+      g.shootT = 1.4;
+      const a = Math.atan2(p.y - g.y, p.x - g.x) + (state.rng() - 0.5) * 0.14;
+      state.bullets.push(makeBullet(g.x, g.y, a, 420, 'guard'));
+      if (state.onEvent) state.onEvent('gunshot');
+    }
+  }
+  state.thugs = state.thugs.filter((t) => t.hp > 0);
+  state.guards = state.guards.filter((g) => g.hp > 0);
 }
 
-function finishMission(world) {
-  const s = world.state;
-  const m = s.mission;
-  const reward = MISSIONS[m.index].reward;
-  s.money += reward;
-  s.stats.missionsDone += 1;
-  s.toast = { text: `Mission complete: ${MISSIONS[m.index].name}  +$${reward}`, timer: 3.5 };
-  s.mission = { index: m.index + 1, stage: 0, timer: 0, hold: 0, collected: 0, guardsSpawned: false };
-  s.marker = null;
-  if (s.mission.index >= MISSIONS.length) {
-    s.objective = 'Free roam — Port Meridian is yours, Rook.';
-    s.gameComplete = true;
-    return 'done';
-  }
-  startMission(world, s.mission.index);
-  s.toast = { text: `Mission complete: ${MISSIONS[m.index].name}  +$${reward}`, timer: 3.5 };
-  return 'done';
-}
-
-function spawnThugs(world, shop) {
-  const s = world.state;
-  for (let i = 0; i < 2; i += 1) {
-    const thug = makePed(world.random, shop.x + range(world.random, -90, 90), shop.y + range(world.random, -90, 90), 'thug');
-    thug.state = 'chase';
-    s.peds.push(thug);
-  }
-}
-
-function spawnGuards(world) {
-  const s = world.state;
-  for (let i = 0; i < 4; i += 1) {
-    const guard = makePed(world.random, world.city.docks.x + range(world.random, -160, 160), world.city.docks.y - range(world.random, 40, 220), 'guard');
-    guard.state = 'chase';
-    s.peds.push(guard);
-  }
-  s.mission.guardsSpawned = true;
+export function missionPayout(index) {
+  return MISSION_PAYOUTS[index] || 0;
 }

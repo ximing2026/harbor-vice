@@ -1,199 +1,183 @@
-// The city of Port Meridian: a seeded grid of roads, blocks and buildings,
-// the harbour along its south edge, and every named place the missions use.
-// Pure data and geometry — no drawing, no browser — so the shots and the
-// game build the same city from the same seed.
-import { GRID, PALETTE, WORLD } from './config.js';
-import { pick, range } from './random.js';
+// Port Meridian — the city layout: road grid, buildings, park, plaza, harbour,
+// landmarks, parked cars and pickup spots. All derived from one seed so the
+// city is identical on every run.
+import { PITCH, ROAD, STREETS, WORLD, WORLD_H, roadC, PAL } from './config.js';
+import { makeRng, range, rangeInt, pick } from './random.js';
 
-export function roadCenter(index) {
-  return GRID.roadWidth / 2 + index * GRID.pitch;
-}
+const ROOFS = ['#6b4a35', '#5d4030', '#7a5240', '#54402e', '#6e3f2e', '#4a3a2c'];
+const WALLS = ['#c9a06a', '#b98d54', '#a87f52', '#c2a878', '#9a7a4e'];
 
-function blockRect(bi, bj) {
-  const x0 = roadCenter(bi) + GRID.roadWidth / 2;
-  const y0 = roadCenter(bj) + GRID.roadWidth / 2;
-  return { x: x0, y: y0, w: GRID.block, h: GRID.block };
-}
-
-export function createCity(random) {
+export function buildCity(seed) {
+  const rng = makeRng(seed);
   const buildings = [];
-  const parks = [];
-  const palms = [];
-  const lamps = [];
-  const piers = [];
-  const parkedCars = [];
-  const carColors = ['#d94f3d', '#3d7dd9', '#e8c95a', '#7ddc7d', '#e8e8e8', '#5a4a6b', '#2fa8a0', '#c95a7d'];
+  const trees = [];
+  const windows = [];
 
-  // Named places: block indices are (column, row) on the 8x8 block grid.
-  const PARK_BLOCK = [4, 4];
-  const PLAZA_BLOCK = [5, 3];
-  const CHOP_BLOCK = [7, 1];
-  const safehouse = { x: blockRect(0, 0).x + 60, y: blockRect(0, 0).y + 60 };
-  const chopShop = { x: blockRect(7, 1).x + 114, y: blockRect(7, 1).y + 114 };
-  const plaza = { x: blockRect(5, 3).x + 114, y: blockRect(5, 3).y + 114 };
-  const docks = { x: 1200, y: 2680 };
+  // One or two buildings per ordinary block; park and plaza blocks stay open.
+  for (let bx = 0; bx < STREETS; bx += 1) {
+    for (let by = 0; by < STREETS; by += 1) {
+      const x0 = bx * PITCH + ROAD;
+      const y0 = by * PITCH + ROAD;
+      const size = PITCH - ROAD; // 136
+      if (bx === 1 && by === 1) {
+        // Park: trees scattered inside the block.
+        for (let i = 0; i < 14; i += 1) {
+          trees.push({ x: x0 + range(rng, 12, size - 12), y: y0 + range(rng, 12, size - 12), r: range(rng, 8, 15) });
+        }
+        continue;
+      }
+      if (bx === 4 && by === 4) continue; // central plaza, kept open
+      const n = rangeInt(rng, 1, 2);
+      for (let i = 0; i < n; i += 1) {
+        const w = range(rng, 56, 96);
+        const h = range(rng, 56, 96);
+        const x = x0 + range(rng, 4, size - w - 4);
+        const y = y0 + range(rng, 4, size - h - 4);
+        const b = { x, y, w, h, roof: pick(rng, ROOFS), wall: pick(rng, WALLS), kind: 'block' };
+        buildings.push(b);
+        const cols = Math.max(1, Math.floor(w / 26));
+        const rows = Math.max(1, Math.floor(h / 26));
+        for (let cx = 0; cx < cols; cx += 1) {
+          for (let cy = 0; cy < rows; cy += 1) {
+            if (rng() < 0.55) windows.push({ x: x + 10 + cx * 26, y: y + 10 + cy * 26, lit: rng() < 0.5 });
+          }
+        }
+      }
+    }
+  }
+
+  // Landmark buildings (also solid).
+  const safehouse = { x: 96, y: 96, w: 84, h: 64, roof: PAL.safehouse, wall: '#7a9a6a', kind: 'safehouse' };
+  const chopshop = { x: 1480, y: 480, w: 110, h: 80, roof: PAL.chopshop, wall: '#8a5a4a', kind: 'chopshop' };
   const shops = [
-    { x: blockRect(2, 5).x + 114, y: blockRect(2, 5).y - 8, label: "Rosa's Bodega" },
-    { x: blockRect(6, 3).x - 8, y: blockRect(6, 3).y + 114, label: 'Neon Nails' },
-    { x: blockRect(3, 7).x + 114, y: blockRect(3, 7).y + 236, label: 'Bait & Tackle' },
+    { x: 480, y: 1080, w: 90, h: 70, roof: PAL.shop, wall: '#7a8aa0', kind: 'shop', id: 0 },
+    { x: 1080, y: 280, w: 90, h: 70, roof: PAL.shop, wall: '#7a8aa0', kind: 'shop', id: 1 },
+    { x: 1280, y: 1280, w: 90, h: 70, roof: PAL.shop, wall: '#7a8aa0', kind: 'shop', id: 2 },
+  ];
+  buildings.push(safehouse, chopshop, ...shops);
+
+  const piers = [
+    { x: 560, y: WORLD, w: 80, h: 180, id: 0 },
+    { x: 1160, y: WORLD, w: 80, h: 180, id: 1 },
   ];
 
-  // Two piers reach into the harbour water; the docks marker sits at the first.
-  piers.push({ x: 1150, y: WORLD.waterY, w: 100, h: 200 });
-  piers.push({ x: 1650, y: WORLD.waterY, w: 100, h: 160 });
-
-  for (let bi = 0; bi < 8; bi += 1) {
-    for (let bj = 0; bj < 8; bj += 1) {
-      const block = blockRect(bi, bj);
-      const key = `${bi},${bj}`;
-      if (key === `${PARK_BLOCK[0]},${PARK_BLOCK[1]}`) {
-        parks.push({ x: block.x, y: block.y, w: block.w, h: block.h });
-        for (let t = 0; t < 9; t += 1) {
-          palms.push({ x: block.x + 30 + random() * (block.w - 60), y: block.y + 30 + random() * (block.h - 60) });
-        }
-        continue;
-      }
-      if (key === `${PLAZA_BLOCK[0]},${PLAZA_BLOCK[1]}`) {
-        // Open plaza: no buildings, and the mission-2 sports car parks here.
-        parkedCars.push({ x: plaza.x + 40, y: plaza.y - 20, angle: Math.PI / 2, model: 'sports', color: '#e8c95a', target: true });
-        for (let t = 0; t < 4; t += 1) {
-          palms.push({ x: block.x + 24 + t * 60, y: block.y + 24 });
-          palms.push({ x: block.x + 24 + t * 60, y: block.y + block.h - 24 });
-        }
-        continue;
-      }
-      if (key === '0,0') {
-        buildings.push({ x: block.x + 20, y: block.y + 20, w: 120, h: 90, color: '#f0e6d2', roof: '#8a5a3b', seed: random(), home: true });
-        buildings.push({ x: block.x + 150, y: block.y + 130, w: 60, h: 50, color: '#c9a2d8', roof: '#5d6b7a', seed: random() });
-        continue;
-      }
-      if (key === `${CHOP_BLOCK[0]},${CHOP_BLOCK[1]}`) {
-        buildings.push({ x: block.x + 30, y: block.y + 30, w: 168, h: 120, color: '#5d6b7a', roof: '#3a3f4a', seed: random(), chop: true });
-        continue;
-      }
-      // An ordinary block: one big building, two side by side, or four small.
-      const style = random();
-      if (style < 0.45) {
-        buildings.push({ x: block.x + 14, y: block.y + 14, w: block.w - 28, h: block.h - 28, color: pick(random, PALETTE.building), roof: pick(random, PALETTE.roof), seed: random() });
-      } else if (style < 0.8) {
-        buildings.push({ x: block.x + 12, y: block.y + 12, w: block.w / 2 - 18, h: block.h - 24, color: pick(random, PALETTE.building), roof: pick(random, PALETTE.roof), seed: random() });
-        buildings.push({ x: block.x + block.w / 2 + 6, y: block.y + 12, w: block.w / 2 - 18, h: block.h - 24, color: pick(random, PALETTE.building), roof: pick(random, PALETTE.roof), seed: random() });
-      } else {
-        for (const [ox, oy] of [[12, 12], [block.w / 2 + 6, 12], [12, block.h / 2 + 6], [block.w / 2 + 6, block.h / 2 + 6]]) {
-          buildings.push({ x: block.x + ox, y: block.y + oy, w: block.w / 2 - 18, h: block.h / 2 - 18, color: pick(random, PALETTE.building), roof: pick(random, PALETTE.roof), seed: random() });
-        }
-      }
-      // A palm or two on the block's corners.
-      if (random() < 0.6) palms.push({ x: block.x + 16, y: block.y + 16 });
-      if (random() < 0.4) palms.push({ x: block.x + block.w - 16, y: block.y + block.h - 16 });
-    }
-  }
-
-  // A lamp at every intersection corner, and palms along the harbour front.
-  for (let i = 0; i < GRID.roads; i += 1) {
-    for (let j = 0; j < GRID.roads; j += 1) {
-      lamps.push({ x: roadCenter(i) - GRID.roadWidth / 2 + 6, y: roadCenter(j) - GRID.roadWidth / 2 + 6 });
-    }
-  }
-  for (let x = 100; x < 2400; x += 170) {
-    palms.push({ x: x + range(random, -20, 20), y: WORLD.waterY - 60 });
-  }
-
-  // Parked cars along road edges: stealable, but not the mission target.
-  for (let n = 0; n < 10; n += 1) {
-    const vertical = random() < 0.5;
-    const road = Math.floor(random() * GRID.roads);
-    const along = range(random, 120, roadCenter(GRID.roads - 1));
-    const side = random() < 0.5 ? -1 : 1;
-    const x = vertical ? roadCenter(road) + side * 26 : along;
-    const y = vertical ? along : roadCenter(road) + side * 26;
-    parkedCars.push({ x, y, angle: vertical ? Math.PI / 2 : 0, model: pick(random, ['sedan', 'sedan', 'van', 'taxi']), color: pick(random, carColors), target: false });
-  }
-
-  // Never let a parked car block the courier van: with some seeds one lands
-  // on top of the van's parking spot and wedges it against the safehouse,
-  // so the first mission cannot even start. Relocated cars go to a fixed
-  // road-edge spot (no extra random calls, so the rest of the city is
-  // unchanged for this seed).
-  let relocated = 0;
-  for (const pc of parkedCars) {
-    if (pc.target) continue;
-    const nearVan = Math.hypot(pc.x - (safehouse.x + 110), pc.y - (safehouse.y + 40)) < 130;
-    const nearHome = Math.hypot(pc.x - safehouse.x, pc.y - safehouse.y) < 200;
-    if (nearVan || nearHome) {
-      pc.x = roadCenter(7);
-      pc.y = roadCenter(1) + 26 + relocated * 70;
-      pc.angle = 0;
-      relocated += 1;
-    }
-  }
-
-  function inWater(x, y) {
-    if (y < WORLD.waterY) return false;
-    for (const pier of piers) {
-      if (x >= pier.x && x <= pier.x + pier.w && y >= pier.y && y <= pier.y + pier.h) return false;
-    }
-    return true;
-  }
-
-  /** Push a circle out of buildings, water and the world edge; returns the new point. */
-  function collide(x, y, r) {
-    let nx = Math.max(WORLD.minX + r, Math.min(WORLD.maxX - r, x));
-    let ny = Math.max(WORLD.minY + r, Math.min(WORLD.maxY + WORLD.waterH - r, y));
-    for (const b of buildings) {
-      const cx = Math.max(b.x, Math.min(nx, b.x + b.w));
-      const cy = Math.max(b.y, Math.min(ny, b.y + b.h));
-      const dx = nx - cx;
-      const dy = ny - cy;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < r * r) {
-        if (d2 > 0.01) {
-          const d = Math.sqrt(d2);
-          nx = cx + (dx / d) * r;
-          ny = cy + (dy / d) * r;
-        } else {
-          // The centre is inside the building: leave along the smallest overlap.
-          const left = nx - b.x;
-          const right = b.x + b.w - nx;
-          const top = ny - b.y;
-          const bottom = b.y + b.h - ny;
-          const m = Math.min(left, right, top, bottom);
-          if (m === left) nx = b.x - r;
-          else if (m === right) nx = b.x + b.w + r;
-          else if (m === top) ny = b.y - r;
-          else ny = b.y + b.h + r;
-        }
-      }
-    }
-    if (inWater(nx, ny)) {
-      // Shoved into the sea: back to the waterline (or onto the pier they came from).
-      ny = WORLD.waterY - r;
-    }
-    return { x: nx, y: ny };
-  }
-
-  function randomRoadPoint(randomFn) {
-    const vertical = randomFn() < 0.5;
-    const road = Math.floor(randomFn() * GRID.roads);
-    const along = range(randomFn, 60, roadCenter(GRID.roads - 1));
-    return vertical
-      ? { x: roadCenter(road), y: along, angle: randomFn() < 0.5 ? 0 : Math.PI }
-      : { x: along, y: roadCenter(road), angle: randomFn() < 0.5 ? Math.PI / 2 : -Math.PI / 2 };
-  }
-
-  function randomSidewalkPoint(randomFn) {
-    const vertical = randomFn() < 0.5;
-    const road = Math.floor(randomFn() * GRID.roads);
-    const along = range(randomFn, 40, roadCenter(GRID.roads - 1));
-    const side = randomFn() < 0.5 ? -1 : 1;
-    return vertical
-      ? { x: roadCenter(road) + side * 52, y: along }
-      : { x: along, y: roadCenter(road) + side * 52 };
-  }
-
-  return {
-    buildings, parks, palms, lamps, piers, parkedCars,
-    safehouse, chopShop, plaza, docks, shops,
-    collide, inWater, randomRoadPoint, randomSidewalkPoint,
+  const city = {
+    seed,
+    buildings,
+    trees,
+    windows,
+    safehouse,
+    chopshop,
+    shops,
+    piers,
+    docks: { x: 600, y: 1900, r: 95 },
+    briefcase: { x: 1200, y: 1940, taken: false },
+    park: { x: 1 * PITCH + ROAD, y: 1 * PITCH + ROAD, s: PITCH - ROAD },
+    plaza: { x: 4 * PITCH + ROAD, y: 4 * PITCH + ROAD, s: PITCH - ROAD },
   };
+  return city;
+}
+
+// True when the point is solid ground to drive or walk on: inside a building
+// or in the water (piers are walkable/drivable decks over the water).
+export function solidAt(city, x, y) {
+  if (x < 0 || y < 0 || x > WORLD || y > WORLD_H) return true;
+  if (y >= WORLD) {
+    for (const p of city.piers) {
+      if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return false;
+    }
+    return true; // open water
+  }
+  for (const b of city.buildings) {
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true;
+  }
+  return false;
+}
+
+// Push a circle (x, y, radius) out of solid ground; returns corrected position.
+export function resolveSolid(city, x, y, r) {
+  let nx = x;
+  let ny = y;
+  // Water: only piers may be entered. A circle may cross the water line when
+  // its centre lines up with a pier's span; it may not drive past a pier's end.
+  if (ny + r >= WORLD) {
+    let pier = null;
+    for (const p of city.piers) {
+      if (nx >= p.x + 4 && nx <= p.x + p.w - 4) { pier = p; break; }
+    }
+    if (!pier) {
+      ny = WORLD - r;
+    } else if (ny + r > pier.y + pier.h) {
+      ny = pier.y + pier.h - r;
+    }
+  }
+  if (nx - r < 0) nx = r;
+  if (nx + r > WORLD) nx = WORLD - r;
+  if (ny - r < 0) ny = r;
+  if (ny + r > WORLD_H) ny = WORLD_H - r;
+  for (const b of city.buildings) {
+    const cx = Math.max(b.x, Math.min(nx, b.x + b.w));
+    const cy = Math.max(b.y, Math.min(ny, b.y + b.h));
+    const dx = nx - cx;
+    const dy = ny - cy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < r * r) {
+      if (d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        nx = cx + (dx / d) * r;
+        ny = cy + (dy / d) * r;
+      } else {
+        // Centre inside the rect: push out along the smallest penetration.
+        const pl = nx - b.x + r;
+        const pr = b.x + b.w - nx + r;
+        const pt = ny - b.y + r;
+        const pb = b.y + b.h - ny + r;
+        const m = Math.min(pl, pr, pt, pb);
+        if (m === pl) nx = b.x - r;
+        else if (m === pr) nx = b.x + b.w + r;
+        else if (m === pt) ny = b.y - r;
+        else ny = b.y + b.h + r;
+      }
+    }
+  }
+  return { x: nx, y: ny };
+}
+
+export function onPier(city, x, y) {
+  for (const p of city.piers) {
+    if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return true;
+  }
+  return false;
+}
+
+// True when a building stands between the two points (water never blocks
+// sight). Sampled along the segment; used by the police sight check.
+export function losBlocked(city, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const d = Math.hypot(dx, dy);
+  const steps = Math.max(1, Math.ceil(d / 20));
+  for (let i = 1; i < steps; i += 1) {
+    const t = i / steps;
+    const x = x1 + dx * t;
+    const y = y1 + dy * t;
+    for (const b of city.buildings) {
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true;
+    }
+  }
+  return false;
+}
+
+// Fixed pickup spots (cash / health / ammo).
+export function pickupSpots() {
+  return [
+    { x: 400, y: 400, kind: 'cash' },
+    { x: 900, y: 900, kind: 'cash' },
+    { x: 1500, y: 300, kind: 'cash' },
+    { x: 300, y: 1200, kind: 'health' },
+    { x: 1400, y: 1400, kind: 'health' },
+    { x: 700, y: 700, kind: 'ammo' },
+    { x: 1100, y: 1600, kind: 'ammo' },
+    { x: 1600, y: 1000, kind: 'cash' },
+  ];
 }

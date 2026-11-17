@@ -1,96 +1,225 @@
-// The police response: cop cars that hunt the player by wanted level, and
-// foot cops who chase a player on foot and try to make an arrest.
-import { CAR, WANTED } from './config.js';
-import { roadCenter } from './city.js';
-import { makeCar, makePed } from './entities.js';
-import { range } from './random.js';
+// Police: wanted level, heat, cop-car pursuit and foot-cop arrests.
+import { WORLD, WORLD_H } from './config.js';
+import { makeRng, range, rangeInt, clamp, dist2, angleDiff } from './random.js';
+import { makeCar } from './entities.js';
+import { resolveSolid, losBlocked } from './city.js';
 
-function angDiff(a, b) {
-  let d = b - a;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return d;
+export function wantedFromHeat(heat) {
+  if (heat <= 0) return 0;
+  return Math.min(5, Math.ceil(heat / 20));
 }
 
-export function spawnCopCar(city, random, near, minDist = 320) {
-  // Spawn on a road a little way from the player, off the immediate view.
-  for (let tries = 0; tries < 12; tries += 1) {
-    const p = city.randomRoadPoint(random);
-    const d = Math.hypot(p.x - near.x, p.y - near.y);
-    if (d > minDist && d < 900) {
-      const car = makeCar(random, 'police', p.x, p.y, p.angle);
-      car.driver = 'cop';
-      return car;
+export function addHeat(state, amount) {
+  state.player.heat = clamp(state.player.heat + amount, 0, 100);
+  state.player.wanted = wantedFromHeat(state.player.heat);
+}
+
+function spawnCopCar(state, rng) {
+  const p = state.player;
+  for (let tries = 0; tries < 10; tries += 1) {
+    const a = range(rng, 0, Math.PI * 2);
+    const r = range(rng, 450, 680);
+    const x = clamp(p.x + Math.cos(a) * r, 60, WORLD - 60);
+    const y = clamp(p.y + Math.sin(a) * r, 60, WORLD_H - 60);
+    if (dist2(x, y, p.x, p.y) < 420 * 420) continue;
+    const car = makeCar(rng, {
+      kind: 'cop', x, y, maxSpeed: 150, accel: 200,
+      color: '#20242e', hp: 120, driver: 'cop',
+    });
+    car.targetX = p.x;
+    car.targetY = p.y;
+    car.retarget = 0;
+    return car;
+  }
+  return null;
+}
+
+function spawnFootCop(state, rng) {
+  const p = state.player;
+  for (let tries = 0; tries < 10; tries += 1) {
+    const a = range(rng, 0, Math.PI * 2);
+    const r = range(rng, 280, 420);
+    const x = clamp(p.x + Math.cos(a) * r, 40, WORLD - 40);
+    const y = clamp(p.y + Math.sin(a) * r, 40, WORLD - 40);
+    if (dist2(x, y, p.x, p.y) < 260 * 260) continue;
+    return { x, y, angle: 0, speed: 96, hp: 40, arrest: 0 };
+  }
+  return null;
+}
+
+export function stepPolice(state, dt, rng) {
+  const p = state.player;
+  p.wanted = wantedFromHeat(p.heat);
+
+  // Visibility: a cop sees the player only within 520 px with a clear line
+  // of sight (buildings block it). Sight is re-checked a few times a second
+  // per cop, so ducking behind a building really breaks the chase.
+  let seen = false;
+  for (const car of state.cars) {
+    if (car.kind !== 'cop') continue;
+    car.sightT = (car.sightT || 0) - dt;
+    if (car.sightT <= 0) {
+      car.sightT = 0.25;
+      car.sees = dist2(car.x, car.y, p.x, p.y) < 520 * 520
+        && !losBlocked(state.city, car.x, car.y, p.x, p.y);
+    }
+    if (car.sees) {
+      seen = true;
+      car.blindT = 0;
+    } else {
+      car.blindT = (car.blindT || 0) + dt;
     }
   }
-  const p = city.randomRoadPoint(random);
-  const car = makeCar(random, 'police', p.x, p.y, p.angle);
-  car.driver = 'cop';
-  return car;
-}
-
-export function spawnFootCop(city, random, near) {
-  const p = city.randomSidewalkPoint(random);
-  // Prefer a sidewalk point near the player.
-  let best = p;
-  let bestD = Math.hypot(p.x - near.x, p.y - near.y);
-  for (let tries = 0; tries < 6; tries += 1) {
-    const q = city.randomSidewalkPoint(random);
-    const d = Math.hypot(q.x - near.x, q.y - near.y);
-    if (d > 200 && d < bestD) { best = q; bestD = d; }
+  for (const fc of state.footCops) {
+    fc.sightT = (fc.sightT || 0) - dt;
+    if (fc.sightT <= 0) {
+      fc.sightT = 0.25;
+      fc.sees = dist2(fc.x, fc.y, p.x, p.y) < 520 * 520
+        && !losBlocked(state.city, fc.x, fc.y, p.x, p.y);
+    }
+    if (fc.sees) {
+      seen = true;
+      fc.blindT = 0;
+    } else {
+      fc.blindT = (fc.blindT || 0) + dt;
+    }
   }
-  const cop = makePed(random, best.x, best.y, 'cop');
-  cop.state = 'chase';
-  cop.arrest = 0;
-  return cop;
-}
-
-/** How many cop cars the wanted level calls for. */
-export function wantedCopCars(wanted) {
-  return WANTED.copCars[Math.max(0, Math.min(WANTED.max, wanted))];
-}
-
-/** Steer one cop car at the player's predicted position; returns damage on ram. */
-export function stepCopCar(dt, city, car, player, playerCar) {
-  const target = playerCar && playerCar.active ? playerCar : player;
-  const px = target.x + (target.vx || 0) * 0.4;
-  const py = target.y + (target.vy || 0) * 0.4;
-  const want = Math.atan2(py - car.y, px - car.x);
-  const diff = angDiff(car.angle, want);
-  car.angle += Math.max(-3.4 * dt, Math.min(3.4 * dt, diff));
-  // If the target is right behind, back up out of the jam instead of spinning.
-  const throttle = Math.abs(diff) > 2.2 && car.speed < 40 ? -0.7 : 1;
-  const maxSpeed = CAR.policeMax * (0.75 + 0.05 * (car.wantedLevel || 2));
-  const targetSpeed = throttle > 0 ? maxSpeed : -CAR.reverseMax;
-  const accel = targetSpeed > car.speed ? CAR.accel : CAR.brake;
-  car.speed += Math.max(-accel * dt, Math.min(accel * dt, targetSpeed - car.speed));
-  const nx = car.x + Math.cos(car.angle) * car.speed * dt;
-  const ny = car.y + Math.sin(car.angle) * car.speed * dt;
-  const fixed = city.collide(nx, ny, 20);
-  car.x = fixed.x;
-  car.y = fixed.y;
-  car.vx = Math.cos(car.angle) * car.speed;
-  car.vy = Math.sin(car.angle) * car.speed;
-  car.sirenPhase += dt * 6;
-}
-
-/** A foot cop runs at the player and, close up, builds an arrest timer. */
-export function stepFootCop(dt, city, cop, player, random) {
-  const dx = player.x - cop.x;
-  const dy = player.y - cop.y;
-  const dist = Math.hypot(dx, dy);
-  cop.angle = Math.atan2(dy, dx);
-  if (dist > 26) {
-    const speed = 235;
-    const next = city.collide(cop.x + Math.cos(cop.angle) * speed * dt, cop.y + Math.sin(cop.angle) * speed * dt, 10);
-    cop.x = next.x;
-    cop.y = next.y;
-    cop.arrest = Math.max(0, (cop.arrest || 0) - dt);
+  if (seen) {
+    p.unseen = 0;
+    p.lastSeenX = p.x;
+    p.lastSeenY = p.y;
   } else {
-    cop.arrest = (cop.arrest || 0) + dt;
-    // Shove the player a little while the arrest builds.
-    player.x += Math.cos(cop.angle) * 12 * dt;
-    player.y += Math.sin(cop.angle) * 12 * dt;
+    p.unseen += dt;
+    // Heat decays only once the player has been unseen a while, and only
+    // while heat itself is above zero (wanted is heat's floor, not its gate).
+    if (p.unseen > 3 && p.heat > 0) {
+      p.heat = Math.max(0, p.heat - 5 * dt);
+      p.wanted = wantedFromHeat(p.heat);
+    }
   }
-  return cop.arrest >= 1.4;
+  // Cops that have not seen the player for 10 s give up and drive off.
+  state.cars = state.cars.filter((car) => car.kind !== 'cop' || (car.blindT || 0) <= 10);
+  state.footCops = state.footCops.filter((fc) => (fc.blindT || 0) <= 10);
+
+  // Keep the right number of cop cars on the road. Reinforcements only arrive
+  // while the player is seen (or in the first seconds after a mission starts,
+  // when the police respond to the call) — once the player breaks away, the
+  // force dwindles instead of respawning on top of them.
+  let copCount = 0;
+  for (const car of state.cars) if (car.kind === 'cop') copCount += 1;
+  const responding = state.time - state.mission.startedAt < 3;
+  if (p.wanted > 0 && copCount < p.wanted && (seen || responding)) {
+    const car = spawnCopCar(state, rng);
+    if (car) state.cars.push(car);
+  }
+  if (p.wanted === 0) {
+    // Clear out distant cop cars once the heat is gone.
+    state.cars = state.cars.filter((car) => {
+      if (car.kind !== 'cop') return true;
+      return dist2(car.x, car.y, p.x, p.y) < 900 * 900;
+    });
+  }
+
+  // Foot cops while the player is on foot and wanted. Like the cars, they
+  // only reinforce while the player is seen (or just after a mission starts)
+  // — otherwise a fresh cop would keep spawning on top of a hidden player
+  // and the heat could never burn off.
+  if (p.wanted > 0 && p.onFoot && (seen || responding)) {
+    const want = Math.min(2, p.wanted);
+    if (state.footCops.length < want) {
+      const fc = spawnFootCop(state, rng);
+      if (fc) state.footCops.push(fc);
+    }
+  } else if (state.footCops.length > 0 && p.wanted === 0) {
+    state.footCops.length = 0;
+  }
+
+  // Cop-car pursuit: steer toward the last-seen position (never perfect
+  // homing), ram the player's car on contact.
+  for (const car of state.cars) {
+    if (car.kind !== 'cop' || car.hp <= 0) continue;
+    car.retarget -= dt;
+    if (car.retarget <= 0) {
+      car.targetX = p.lastSeenX;
+      car.targetY = p.lastSeenY;
+      car.retarget = 1.5;
+    }
+    const want = Math.atan2(car.targetY - car.y, car.targetX - car.x);
+    const turn = clamp(angleDiff(car.angle, want), -2.6 * dt, 2.6 * dt);
+    car.angle += turn;
+    const distTo = Math.sqrt(dist2(car.x, car.y, car.targetX, car.targetY));
+    const desired = distTo > 120 ? car.maxSpeed : car.maxSpeed * 0.55;
+    car.speed += clamp(desired - car.speed, -300 * dt, 220 * dt);
+    const nx = car.x + Math.cos(car.angle) * car.speed * dt;
+    const ny = car.y + Math.sin(car.angle) * car.speed * dt;
+    const fixed = resolveSolid(state.city, nx, ny, 15);
+    if (Math.abs(fixed.x - nx) > 2 || Math.abs(fixed.y - ny) > 2) car.speed *= 0.4;
+    car.x = fixed.x;
+    car.y = fixed.y;
+    // Ram the player's car, then back off: a sustained grind would shred
+    // the player's car in seconds, so each ram is small and the cop retreats.
+    if (!p.onFoot && state.playerCar) {
+      const pc = state.playerCar;
+      if (dist2(car.x, car.y, pc.x, pc.y) < 34 * 34) {
+        if (car.hitCooldown <= 0) {
+          damageCar(state, pc, 5);
+          damageCar(state, car, 3);
+          state.shake = Math.min(14, state.shake + 6);
+          car.hitCooldown = 1.5;
+          car.speed = -30;
+        }
+      }
+    }
+  }
+
+  // Foot cops chase on foot; holding the player for 1.2 s busts them.
+  p.arrestT = 0;
+  for (const fc of state.footCops) {
+    const a = Math.atan2(p.y - fc.y, p.x - fc.x);
+    fc.angle = a;
+    fc.x += Math.cos(a) * fc.speed * dt;
+    fc.y += Math.sin(a) * fc.speed * dt;
+    const fixed = resolveSolid(state.city, fc.x, fc.y, 10);
+    fc.x = fixed.x;
+    fc.y = fixed.y;
+    if (dist2(fc.x, fc.y, p.x, p.y) < 26 * 26) {
+      fc.arrest += dt;
+      if (fc.arrest > p.arrestT) p.arrestT = fc.arrest;
+    } else {
+      fc.arrest = 0;
+    }
+  }
+  if (p.arrestT >= 1.2 && p.onFoot) {
+    p.busted = true;
+  }
+}
+
+// Damage a car with a per-car hit cooldown so wedged cars don't explode in
+// under two seconds from per-step contact damage.
+export function damageCar(state, car, amount) {
+  if (car.parked) return; // parked cars are immovable and indestructible
+  if (car.hitCooldown > 0) return;
+  car.hp -= amount;
+  car.hitCooldown = 0.8;
+  if (car.hp <= 0) {
+    explodeCar(state, car);
+  }
+}
+
+export function explodeCar(state, car) {
+  car.hp = 0;
+  car.dead = true;
+  state.shake = Math.min(18, state.shake + 10);
+  for (let i = 0; i < 26; i += 1) {
+    const a = state.rng() * Math.PI * 2;
+    const s = 40 + state.rng() * 180;
+    state.particles.push({
+      x: car.x, y: car.y,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: 0.5 + state.rng() * 0.7, maxLife: 1.2,
+      color: ['#ff9a3c', '#ff5a3c', '#3a3a3a', '#d8d8d8'][Math.floor(state.rng() * 4)],
+      size: 3 + state.rng() * 5,
+    });
+  }
+  if (state.onExplosion) state.onExplosion(car.x, car.y);
 }

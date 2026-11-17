@@ -1,91 +1,59 @@
-// HARBOR VICE tuning: every number and colour the game uses, in one file.
-// Port Meridian is a top-down city on a fixed grid. The renderer shows a
-// 1280x720 slice of it through a camera that trails the player, so nothing
-// here depends on the size of the browser window.
+// Harbor Vice — tuning, palette and world layout constants.
 export const STEP = 1 / 60;
+export const PITCH = 200; // distance between neighbouring road centrelines
+export const ROAD = 64; // road width
+export const STREETS = 9; // roads each way
+export const WORLD = STREETS * PITCH; // 1800: city square
+export const HARBOUR_TOP = WORLD; // water starts here
+export const WORLD_H = WORLD + 220; // harbour strip below the city
 
-export const VIEW = { width: 1280, height: 720 };
+export const START_MONEY = 150;
+export const VIEW_W = 1280;
+export const VIEW_H = 720;
 
-// Nine roads each way, 300 px apart, 72 px wide, leaving 228 px blocks.
-export const GRID = { roads: 9, pitch: 300, roadWidth: 72, block: 228 };
-export const WORLD = { minX: -80, minY: -80, maxX: 2520, maxY: 2520, waterY: 2520, waterH: 260 };
-
-export const PLAYER = {
-  radius: 13,
-  walkSpeed: 175,
-  runSpeed: 265,
-  health: 100,
-  punchRange: 36,
-  punchDamage: 34,
-  punchCooldown: 0.42,
-  shootCooldown: 0.22,
-  bulletSpeed: 900,
-  bulletDamage: 34,
+// Golden-hour palette.
+export const PAL = {
+  ground: '#b98d54',
+  groundDark: '#a67c46',
+  road: '#3b3f4b',
+  roadEdge: '#2c2f38',
+  lane: '#d8c27a',
+  sidewalk: '#8d7d60',
+  water: '#2e6f8e',
+  waterDark: '#255a74',
+  park: '#5d8a4a',
+  parkDark: '#4c7439',
+  plaza: '#9a8a72',
+  pier: '#7a6248',
+  pierEdge: '#5d4a36',
+  safehouse: '#3f7a52',
+  chopshop: '#7a3f3f',
+  shop: '#4a6a8a',
+  docks: '#8a6a3f',
+  hudBg: 'rgba(12, 14, 20, 0.72)',
+  hudText: '#f2e8d5',
+  accent: '#e8b820',
 };
 
-export const CAR = {
-  accel: 430,
-  brake: 700,
-  reverseMax: 170,
-  maxSpeed: 540,
-  sportsMax: 640,
-  vanMax: 460,
-  policeMax: 600,
-  turn: 2.6,
-  grip: 5.2,
-  health: 100,
-  radius: 22,
-};
+// Centreline of road i (0..8) in either direction.
+export function roadC(i) {
+  return i * PITCH + ROAD / 2;
+}
 
-export const TRAFFIC = { count: 14, speedMin: 110, speedMax: 175, despawn: 900 };
-export const PEDS = { count: 26, walkMin: 45, walkMax: 75, fleeSpeed: 150 };
+// True when the point is on a road (either direction).
+export function onRoad(x, y) {
+  for (let i = 0; i < STREETS; i += 1) {
+    const c = roadC(i);
+    if (Math.abs(x - c) <= ROAD / 2 || Math.abs(y - c) <= ROAD / 2) return true;
+  }
+  return false;
+}
 
-// Wanted level: how long unseen before it starts to cool, how fast it cools,
-// how many cop cars each star calls, and what each crime is worth in stars.
-export const WANTED = {
-  decayDelay: 7,
-  decayInterval: 9,
-  max: 5,
-  copCars: [0, 1, 2, 3, 4, 5],
-  stealCar: 1,
-  hitPed: 1,
-  shoot: 1,
-  ramCop: 1,
-  killCop: 2,
-};
-
-export const MONEY = { start: 150, bustedFine: 200, wastedFine: 200 };
-
-export const SAVE_KEY = 'harbor-vice.save.v1';
-
-// Golden-hour harbour city: warm sun, pastel blocks, teal water.
-export const PALETTE = {
-  grass: '#7fae62',
-  parkGrass: '#69a054',
-  sidewalk: '#c9bda6',
-  asphalt: '#3c4048',
-  asphalt2: '#34383f',
-  roadLine: '#e8c95a',
-  crosswalk: '#d8d2c2',
-  sand: '#e3cd96',
-  water: '#2e7f9e',
-  waterDeep: '#256b87',
-  waterGlint: '#7fc4d8',
-  building: ['#f2d8a7', '#e8b48a', '#d97b54', '#e88ca0', '#4fa8a0', '#e0b34c', '#c9a2d8', '#9db8c9', '#f0e6d2'],
-  roof: ['#8a5a3b', '#5d6b7a', '#7a4a3a', '#4a6b5a', '#6b5a7a'],
-  palm: '#3f7d44',
-  palmTrunk: '#8a6b4a',
-  player: '#ffcf3f',
-  playerShirt: '#2f6fd8',
-  cop: '#2244aa',
-  copCar: '#1d3fae',
-  text: '#f4efe4',
-  muted: '#b9b2a0',
-  panel: 'rgba(16, 18, 26, 0.82)',
-  star: '#ffd94a',
-  objective: '#ffd94a',
-  danger: '#ff5a4a',
-  money: '#7ddc7d',
-};
-
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+export const MISSION_PAYOUTS = [400, 700, 900, 1200, 2500];
+export const MISSION_TITLES = [
+  'The Courier Run',
+  'The Gold Comet',
+  'Shakedown',
+  'Lose the Heat',
+  'The Harbor Job',
+];

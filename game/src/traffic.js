@@ -1,159 +1,188 @@
-// City traffic: cars that follow the road grid from intersection to
-// intersection, keep a lane, and stop when something is in front of them.
-// Pedestrians stroll the sidewalks and run from danger.
-import { GRID, PEDS, TRAFFIC } from './config.js';
-import { roadCenter } from './city.js';
+// Traffic and pedestrian AI: road-following cars and sidewalk walkers.
+import { PITCH, ROAD, STREETS, WORLD, roadC } from './config.js';
+import { makeRng, range, rangeInt, pick, clamp, dist2 } from './random.js';
 import { makeCar, makePed } from './entities.js';
-import { range } from './random.js';
 
-function nearestNode(x, y) {
-  let best = null;
-  let bestD = Infinity;
-  for (let i = 0; i < GRID.roads; i += 1) {
-    for (let j = 0; j < GRID.roads; j += 1) {
-      const dx = x - roadCenter(i);
-      const dy = y - roadCenter(j);
-      const d = dx * dx + dy * dy;
-      if (d < bestD) { bestD = d; best = { i, j }; }
+const DIRS = [
+  { dx: 1, dy: 0 }, // 0 east
+  { dx: 0, dy: 1 }, // 1 south
+  { dx: -1, dy: 0 }, // 2 west
+  { dx: 0, dy: -1 }, // 3 north
+];
+const LANE_OFF = 14; // right-hand lane offset from the centreline
+
+// Lane-centre position for a car travelling dir along road `lane`.
+function lanePos(dir, lane) {
+  const c = roadC(lane);
+  if (dir === 0) return { x: 0, y: c + LANE_OFF };
+  if (dir === 2) return { x: 0, y: c - LANE_OFF };
+  if (dir === 1) return { x: c + LANE_OFF, y: 0 };
+  return { x: c - LANE_OFF, y: 0 };
+}
+
+export function spawnTrafficCar(rng, player, cars) {
+  for (let tries = 0; tries < 12; tries += 1) {
+    const dir = rangeInt(rng, 0, 3);
+    const lane = rangeInt(rng, 0, STREETS - 1);
+    const pos = lanePos(dir, lane);
+    const along = range(rng, 80, WORLD - 80);
+    const x = dir === 0 || dir === 2 ? along : pos.x;
+    const y = dir === 1 || dir === 3 ? along : pos.y;
+    if (dist2(x, y, player.x, player.y) < 300 * 300) continue;
+    let blocked = false;
+    for (const c of cars) {
+      if (dist2(x, y, c.x, c.y) < 90 * 90) { blocked = true; break; }
     }
+    if (blocked) continue;
+    const car = makeCar(rng, {
+      kind: 'traffic', x, y,
+      angle: Math.atan2(DIRS[dir].dy, DIRS[dir].dx),
+      maxSpeed: range(rng, 85, 125),
+      driver: 'traffic',
+    });
+    car.dir = dir;
+    car.lane = lane;
+    car.speed = car.maxSpeed;
+    return car;
+  }
+  return null;
+}
+
+export function spawnPed(rng, player) {
+  for (let tries = 0; tries < 12; tries += 1) {
+    const horiz = rng() < 0.5;
+    const lane = rangeInt(rng, 0, STREETS - 1);
+    const along = range(rng, 80, WORLD - 80);
+    const off = (rng() < 0.5 ? -1 : 1) * (ROAD / 2 + 9);
+    const x = horiz ? along : roadC(lane) + off;
+    const y = horiz ? roadC(lane) + off : along;
+    if (dist2(x, y, player.x, player.y) < 220 * 220) continue;
+    const ped = makePed(rng, x, y);
+    ped.road = horiz ? 'h' : 'v';
+    ped.lane = lane;
+    ped.dir = rangeInt(rng, 0, 1) ? 1 : -1;
+    return ped;
+  }
+  return null;
+}
+
+// Car ahead in the same lane and direction, within `range` px.
+function carAhead(state, car, rangePx) {
+  const d = DIRS[car.dir];
+  let best = null;
+  let bestDist = rangePx;
+  for (const other of state.cars) {
+    if (other === car || other.parked && other.hp <= 0) continue;
+    if (other.parked && other.kind === 'traffic') continue;
+    const dx = other.x - car.x;
+    const dy = other.y - car.y;
+    const along = dx * d.dx + dy * d.dy;
+    if (along <= 0 || along > bestDist) continue;
+    const side = Math.abs(dx * d.dy - dy * d.dx);
+    if (side > 26) continue;
+    // Parked cars block too (they sit in the lane).
+    best = other;
+    bestDist = along;
   }
   return best;
 }
 
-function angDiff(a, b) {
-  let d = b - a;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return d;
-}
-
-/** A traffic car picks its next intersection when it reaches the one it aimed for. */
-function retarget(car, random) {
-  const node = nearestNode(car.x, car.y);
-  const options = [];
-  if (node.i > 0) options.push({ i: node.i - 1, j: node.j });
-  if (node.i < GRID.roads - 1) options.push({ i: node.i + 1, j: node.j });
-  if (node.j > 0) options.push({ i: node.i, j: node.j - 1 });
-  if (node.j < GRID.roads - 1) options.push({ i: node.i, j: node.j + 1 });
-  const next = options[Math.floor(random() * options.length)];
-  // Right-hand lane: offset 18 px to the right of the travel direction.
-  const tx = roadCenter(next.i);
-  const ty = roadCenter(next.j);
-  const dir = Math.atan2(ty - car.y, tx - car.x);
-  const px = Math.cos(dir + Math.PI / 2) * 18;
-  const py = Math.sin(dir + Math.PI / 2) * 18;
-  car.target = { x: tx + px, y: ty + py };
-  car.cruise = range(random, TRAFFIC.speedMin, TRAFFIC.speedMax);
-}
-
-export function createTraffic(city, random, count) {
-  const cars = [];
-  for (let n = 0; n < count; n += 1) {
-    const p = city.randomRoadPoint(random);
-    const car = makeCar(random, n % 7 === 6 ? 'taxi' : 'sedan', p.x, p.y, p.angle);
-    car.target = { x: p.x, y: p.y };
-    car.cruise = range(random, TRAFFIC.speedMin, TRAFFIC.speedMax);
-    retarget(car, random);
-    cars.push(car);
-  }
-  return cars;
-}
-
-export function createPeds(city, random, count) {
-  const peds = [];
-  for (let n = 0; n < count; n += 1) {
-    const p = city.randomSidewalkPoint(random);
-    peds.push(makePed(random, p.x, p.y));
-  }
-  return peds;
-}
-
-/** True when another car (or the player's car) sits in front of `car` within range. */
-function blockedAhead(car, others, rangeAhead) {
-  const fx = Math.cos(car.angle);
-  const fy = Math.sin(car.angle);
-  for (const other of others) {
-    if (other === car || !other.active) continue;
-    const dx = other.x - car.x;
-    const dy = other.y - car.y;
-    const along = dx * fx + dy * fy;
-    const side = Math.abs(-dx * fy + dy * fx);
-    if (along > 0 && along < rangeAhead && side < 30) return true;
-  }
-  return false;
-}
-
-export function stepTraffic(dt, city, cars, playerCar, focus, random) {
-  for (const car of cars) {
-    if (!car.active) continue;
-    const dx = car.target.x - car.x;
-    const dy = car.target.y - car.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 24) retarget(car, random);
-    const want = Math.atan2(car.target.y - car.y, car.target.x - car.x);
-    car.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, angDiff(car.angle, want)));
-    const blocked = blockedAhead(car, cars, 78) || (playerCar && playerCar.active && blockedAhead(car, [playerCar], 78));
-    const targetSpeed = blocked ? 0 : car.cruise;
-    car.speed += Math.max(-320 * dt, Math.min(220 * dt, targetSpeed - car.speed));
-    car.x += Math.cos(car.angle) * car.speed * dt;
-    car.y += Math.sin(car.angle) * car.speed * dt;
-    // Too far from the action: recycle onto a road near the focus point.
-    const fx = focus.x - car.x;
-    const fy = focus.y - car.y;
-    if (fx * fx + fy * fy > TRAFFIC.despawn * TRAFFIC.despawn) {
-      const p = city.randomRoadPoint(random);
-      // Keep the recycle near the player: nudge the spawn onto a nearby road.
-      const near = nearestNode(focus.x, focus.y);
-      const road = Math.floor(random() * GRID.roads);
-      const along = range(random, -400, 400);
-      if (random() < 0.5) { car.x = roadCenter(road); car.y = Math.max(0, Math.min(2400, roadCenter(near.j) + along)); }
-      else { car.x = Math.max(0, Math.min(2400, roadCenter(near.i) + along)); car.y = roadCenter(road); }
-      car.angle = p.angle;
-      car.speed = car.cruise;
-      retarget(car, random);
+export function stepTraffic(state, dt, rng) {
+  for (const car of state.cars) {
+    if (car.kind !== 'traffic' || car.hp <= 0) continue;
+    const d = DIRS[car.dir];
+    const ahead = carAhead(state, car, 62);
+    const target = ahead ? 0 : car.maxSpeed;
+    car.speed += clamp(target - car.speed, -260 * dt, 170 * dt);
+    // At an intersection, sometimes turn onto the crossing road.
+    const along = car.dir === 0 || car.dir === 2 ? car.x : car.y;
+    for (let j = 0; j < STREETS; j += 1) {
+      const c = roadC(j);
+      if (Math.abs(along - c) < 9 && car.wait <= 0) {
+        if (rng() < 0.3) {
+          const options = [0, 1, 2, 3].filter((nd) => nd !== (car.dir + 2) % 4);
+          const nd = pick(rng, options);
+          if (nd === 1 || nd === 3) {
+            // Now travelling along vertical road j: set the x lane, keep y.
+            car.x = roadC(j) + (nd === 1 ? LANE_OFF : -LANE_OFF);
+          } else {
+            // Now travelling along horizontal road j: set the y lane, keep x.
+            car.y = roadC(j) + (nd === 0 ? LANE_OFF : -LANE_OFF);
+          }
+          car.dir = nd;
+          car.lane = j;
+          car.angle = Math.atan2(DIRS[nd].dy, DIRS[nd].dx);
+        }
+        car.wait = 0.6; // don't re-decide at the same crossing
+        break;
+      }
     }
+    car.wait = Math.max(0, car.wait - dt);
+    car.x += d.dx * car.speed * dt;
+    car.y += d.dy * car.speed * dt;
+    // Wrap around the city edge instead of despawning mid-road.
+    if (car.x < -40) { car.x = WORLD + 30; }
+    if (car.x > WORLD + 40) { car.x = -30; }
+    if (car.y < -40) { car.y = WORLD + 30; }
+    if (car.y > WORLD + 40) { car.y = -30; }
   }
 }
 
-export function stepPeds(dt, city, peds, danger, random) {
-  for (const ped of peds) {
-    if (!ped.active || ped.down > 0) {
-      if (ped.down > 0) ped.down -= dt;
+export function stepPeds(state, dt, rng) {
+  for (const ped of state.peds) {
+    if (ped.hp <= 0) continue;
+    if (ped.flee > 0) {
+      ped.flee -= dt;
+      const a = Math.atan2(ped.y - ped.fleeY, ped.x - ped.fleeX);
+      ped.x += Math.cos(a) * 95 * dt;
+      ped.y += Math.sin(a) * 95 * dt;
+      ped.angle = a;
       continue;
     }
-    // Danger nearby (gunfire, explosion, a speeding car): run away from it.
-    let flee = null;
-    for (const d of danger) {
-      const dx = ped.x - d.x;
-      const dy = ped.y - d.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < d.radius) { flee = { x: ped.x + dx / (dist || 1), y: ped.y + dy / (dist || 1) }; break; }
+    const speed = ped.speed;
+    if (ped.road === 'h') {
+      ped.x += ped.dir * speed * dt;
+      ped.y = roadC(ped.lane) + (ped.dir > 0 ? ROAD / 2 + 9 : -(ROAD / 2 + 9));
+      ped.angle = ped.dir > 0 ? 0 : Math.PI;
+      if (ped.x < 60 || ped.x > WORLD - 60) ped.dir *= -1;
+      // At an intersection, sometimes switch to a vertical road.
+      const along = ped.x;
+      for (let j = 0; j < STREETS; j += 1) {
+        if (Math.abs(along - roadC(j)) < 6 && rng() < 0.004) {
+          ped.road = 'v';
+          ped.lane = j;
+          ped.dir = rng() < 0.5 ? 1 : -1;
+          break;
+        }
+      }
+    } else {
+      ped.y += ped.dir * speed * dt;
+      ped.x = roadC(ped.lane) + (ped.dir > 0 ? ROAD / 2 + 9 : -(ROAD / 2 + 9));
+      ped.angle = ped.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+      if (ped.y < 60 || ped.y > WORLD - 60) ped.dir *= -1;
+      const along = ped.y;
+      for (let j = 0; j < STREETS; j += 1) {
+        if (Math.abs(along - roadC(j)) < 6 && rng() < 0.004) {
+          ped.road = 'h';
+          ped.lane = j;
+          ped.dir = rng() < 0.5 ? 1 : -1;
+          break;
+        }
+      }
     }
-    if (flee) {
-      ped.state = 'flee';
-      ped.angle = Math.atan2(flee.y - ped.y, flee.x - ped.x);
-      const step = PEDS.fleeSpeed * dt;
-      const next = city.collide(ped.x + Math.cos(ped.angle) * step, ped.y + Math.sin(ped.angle) * step, 10);
-      ped.x = next.x;
-      ped.y = next.y;
-      continue;
+    // Keep peds out of the water.
+    if (ped.y > WORLD - 10) ped.y = WORLD - 10;
+  }
+}
+
+// Scare nearby pedestrians (gunfire, explosion): they run from the point.
+export function scarePeds(state, x, y, radius) {
+  for (const ped of state.peds) {
+    if (ped.hp <= 0) continue;
+    if (dist2(ped.x, ped.y, x, y) < radius * radius) {
+      ped.flee = 3;
+      ped.fleeX = x;
+      ped.fleeY = y;
     }
-    if (ped.state === 'flee') ped.state = 'walk';
-    ped.timer -= dt;
-    const dx = ped.tx - ped.x;
-    const dy = ped.ty - ped.y;
-    if (Math.hypot(dx, dy) < 18 || ped.timer <= 0) {
-      const p = city.randomSidewalkPoint(random);
-      ped.tx = p.x;
-      ped.ty = p.y;
-      ped.timer = range(random, 4, 10);
-    }
-    const want = Math.atan2(ped.ty - ped.y, ped.tx - ped.x);
-    ped.angle += Math.max(-3 * dt, Math.min(3 * dt, angDiff(ped.angle, want)));
-    if (!ped.walkSpeed) ped.walkSpeed = range(random, PEDS.walkMin, PEDS.walkMax);
-    const speed = ped.walkSpeed;
-    const next = city.collide(ped.x + Math.cos(ped.angle) * speed * dt, ped.y + Math.sin(ped.angle) * speed * dt, 10);
-    ped.x = next.x;
-    ped.y = next.y;
   }
 }

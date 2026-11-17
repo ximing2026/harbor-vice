@@ -1,88 +1,76 @@
-// Keyboard and mouse input for HARBOR VICE. Held keys report the current
-// move and drive state; one-shot presses (confirm, pause, enter car, punch)
-// are queued as bit flags and taken once by the loop, so a press that lands
-// between two frames is never lost and never counted twice. The mouse is
-// tracked in screen pixels and converted to world coordinates by the caller.
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
-export const ACTION_ENTER = 4;
-export const ACTION_PUNCH = 8;
-export const ACTION_RESTART_MISSION = 16;
-export const ACTION_QUIT = 32;
-export const ACTION_NEW_GAME = 64;
+// Keyboard + mouse input: produces one plain input object per frame.
+// No game logic here — world.js consumes the object.
+export function createInput() {
+  return {
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+    enter: false,
+    action: false, // E: enter/exit car, carjack
+    punch: false, // F
+    shoot: false, // mouse click (edge-triggered by main)
+    aimX: 0,
+    aimY: 0, // aim in world coordinates, filled in by main.js
+    mouseX: 0,
+    mouseY: 0, // screen coordinates
+    pause: false, // P / Escape (edge-triggered by main)
+    mute: false, // M (edge-triggered by main)
+    anyKey: false,
+    keys: {},
+  };
+}
 
-const UP = new Set(['ArrowUp', 'KeyW']);
-const DOWN = new Set(['ArrowDown', 'KeyS']);
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const RUN = new Set(['ShiftLeft', 'ShiftRight']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
-const ENTER = new Set(['KeyE']);
-const PUNCH = new Set(['KeyF']);
+const KEYMAP = {
+  KeyW: 'up', ArrowUp: 'up',
+  KeyS: 'down', ArrowDown: 'down',
+  KeyA: 'left', ArrowLeft: 'left',
+  KeyD: 'right', ArrowRight: 'right',
+  KeyE: 'action',
+  KeyF: 'punch',
+  Enter: 'enter',
+  KeyP: 'pause',
+  Escape: 'pause',
+  KeyM: 'mute',
+};
 
-export function createInput(canvas) {
-  const keys = new Set();
-  let actions = 0;
-  let mouseX = 0;
-  let mouseY = 0;
-  let mouseDown = false;
-
-  window.addEventListener('keydown', (event) => {
-    if (event.repeat) {
-      if (UP.has(event.code) || DOWN.has(event.code) || LEFT.has(event.code) || RIGHT.has(event.code)) event.preventDefault();
-      return;
+export function attachInput(input, canvas) {
+  function onKey(e, down) {
+    const name = KEYMAP[e.code];
+    if (!name) return;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    input.keys[e.code] = down;
+    if (name === 'up' || name === 'down' || name === 'left' || name === 'right') {
+      input[name] = down;
+    } else if (down) {
+      input[name] = true; // edge: main.js clears it after consuming
     }
-    keys.add(event.code);
-    if (CONFIRM.has(event.code)) actions |= ACTION_CONFIRM;
-    else if (PAUSE.has(event.code)) actions |= ACTION_PAUSE;
-    else if (ENTER.has(event.code)) actions |= ACTION_ENTER;
-    else if (PUNCH.has(event.code)) actions |= ACTION_PUNCH;
-    else if (event.code === 'KeyR') actions |= ACTION_RESTART_MISSION;
-    else if (event.code === 'KeyQ') actions |= ACTION_QUIT;
-    else if (event.code === 'KeyN') actions |= ACTION_NEW_GAME;
-    if (UP.has(event.code) || DOWN.has(event.code) || LEFT.has(event.code) || RIGHT.has(event.code) || event.code === 'Space') event.preventDefault();
+    input.anyKey = true;
+  }
+  window.addEventListener('keydown', (e) => onKey(e, true));
+  window.addEventListener('keyup', (e) => onKey(e, false));
+  canvas.addEventListener('mousedown', (e) => {
+    input.shoot = true;
+    input.anyKey = true;
   });
-  window.addEventListener('keyup', (event) => {
-    keys.delete(event.code);
+  canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    input.mouseX = e.clientX - r.left;
+    input.mouseY = e.clientY - r.top;
   });
   window.addEventListener('blur', () => {
-    keys.clear();
-    mouseDown = false;
+    input.up = input.down = input.left = input.right = false;
+    input.keys = {};
   });
-  canvas.addEventListener('pointermove', (event) => {
-    const rect = canvas.getBoundingClientRect();
-    mouseX = event.clientX - rect.left;
-    mouseY = event.clientY - rect.top;
-  });
-  canvas.addEventListener('pointerdown', (event) => {
-    const rect = canvas.getBoundingClientRect();
-    mouseX = event.clientX - rect.left;
-    mouseY = event.clientY - rect.top;
-    mouseDown = true;
-    actions |= ACTION_CONFIRM;
-  });
-  window.addEventListener('pointerup', () => {
-    mouseDown = false;
-  });
+}
 
-  function held(set) {
-    for (const code of set) if (keys.has(code)) return true;
-    return false;
-  }
-
-  return {
-    up: () => held(UP),
-    down: () => held(DOWN),
-    left: () => held(LEFT),
-    right: () => held(RIGHT),
-    run: () => held(RUN),
-    mouse: () => ({ x: mouseX, y: mouseY, down: mouseDown }),
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
-    },
-  };
+// Clear edge-triggered flags after the frame consumed them.
+export function clearEdges(input) {
+  input.enter = false;
+  input.action = false;
+  input.punch = false;
+  input.shoot = false;
+  input.pause = false;
+  input.mute = false;
+  input.anyKey = false;
 }

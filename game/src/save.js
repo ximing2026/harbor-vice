@@ -1,44 +1,32 @@
-// Save and load for HARBOR VICE: mission progress, money and lifetime
-// stats in localStorage, so a visit can pick up where the last one left
-// off. Storage can be off (private windows): then the game just plays
-// unsaved, and nothing about that is an error.
-import { SAVE_KEY } from './config.js';
+// Save / continue via localStorage. Guarded so Node (no localStorage) is safe.
+export const SAVE_KEY = 'harbor-vice.save.v1';
 
 export function loadSave() {
   try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (typeof data !== 'object' || data === null) return null;
-    return {
-      missionIndex: typeof data.missionIndex === 'number' ? data.missionIndex : 0,
-      money: typeof data.money === 'number' ? data.money : 150,
-      missionsDone: typeof data.missionsDone === 'number' ? data.missionsDone : 0,
-      carsStolen: typeof data.carsStolen === 'number' ? data.carsStolen : 0,
-    };
-  } catch {
+    return data;
+  } catch (e) {
     return null;
   }
 }
 
-export function writeSave(world) {
+export function writeSave(data) {
   try {
-    const s = world.state;
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify({
-      missionIndex: s.mission ? s.mission.index : 0,
-      money: s.money,
-      missionsDone: s.stats.missionsDone,
-      carsStolen: s.stats.carsStolen,
-    }));
-  } catch {
-    // Unsaved play is still play.
+    if (typeof localStorage === 'undefined') return false;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
 export function clearSave() {
   try {
-    window.localStorage.removeItem(SAVE_KEY);
-  } catch {
-    // Nothing to clear.
-  }
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(SAVE_KEY);
+  } catch (e) { /* ignore */ }
 }
