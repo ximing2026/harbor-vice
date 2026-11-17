@@ -38,6 +38,7 @@ function angDiff(a, b) {
 export function createWorld(random) {
   const city = createCity(random);
   const state = {
+    city,
     time: 0, money: MONEY.start, wanted: 0, wantedTimer: 0, unseenTimer: 0,
     player: null, cars: [], traffic: [], copCars: [], footCops: [], peds: [],
     pickups: [], bullets: [], particles: [], skids: [],
